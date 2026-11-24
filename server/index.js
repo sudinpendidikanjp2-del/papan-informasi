@@ -442,6 +442,7 @@ wss.on('connection', (ws) => {
 
 db.prepare('SELECT 1').get();
 await auth.bootstrapAdmin();
+auth.sweepAttempts();
 notify.init();
 
 // Bersihkan berkas unggahan yang tidak dirujuk: saat start, lalu tiap jam.

@@ -60,7 +60,7 @@ Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi
 - Antrian mencatat pegawai yang melayani, dan laporan harian menampilkan jumlah per pegawai.
 - Peran `admin` boleh membuka panel meja mana pun.
 
-Keamanan: password disimpan sebagai hash scrypt; sesi memakai cookie `HttpOnly` + `SameSite=Lax` selama 12 jam; 5 kali gagal login dalam satu username dan alamat IP mengunci percobaan selama 5 menit. Sesi dicabut saat akun dinonaktifkan atau password diganti. Sistem selalu menyisakan minimal satu admin aktif.
+Keamanan: password disimpan sebagai hash scrypt; sesi memakai cookie `HttpOnly` + `SameSite=Lax` selama 12 jam; pembatas login menyimpan hitungannya di database sehingga **bertahan saat server dimulai ulang**. Batasnya dua lapis dalam jendela 15 menit: 5 percobaan per pasangan (alamat, username) dan 20 percobaan per alamat (menahan tebakan banyak username dari satu sumber). Melampaui batas mengunci selama 5 menit. Percobaan dicatat sebelum password diverifikasi, sehingga permintaan paralel tidak bisa menembus batas, dan login yang berhasil menghapus hitungan akun serta menurunkan hitungan alamat satu tingkat (agar pengguna sah di balik alamat bersama tidak ikut terkunci). Sesi dicabut saat akun dinonaktifkan atau password diganti. Sistem selalu menyisakan minimal satu admin aktif.
 
 ## Cara kerja antrian
 
@@ -151,7 +151,6 @@ scripts/
 
 ## Batasan saat ini
 
-- Pembatas login disimpan di memori, jadi reset saat server dimulai ulang.
 - Nomor lama tidak bisa dipakai setelah antrian dipindah ke kategori lain; pengunjung yang tidak membuka halaman pantau dan tidak berlangganan push hanya tahu nomor barunya dari papan atau petugas.
 - Papan memakai `import()` dinamis untuk pdf.js, sehingga membutuhkan browser yang cukup baru (Chrome 63 atau setara). Build pdf.js yang dipakai adalah versi *legacy* untuk kompatibilitas lebih luas.
 - Suara bel dan TTS butuh satu kali ketukan "Aktifkan" di layar setelah halaman dibuka (aturan autoplay browser). Kualitas suara TTS bergantung pada suara bahasa Indonesia yang terpasang di perangkat.

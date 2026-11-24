@@ -100,6 +100,14 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   notified_near INTEGER NOT NULL DEFAULT 0
 );
 
+-- Pembatas percobaan login (bertahan saat server dimulai ulang).
+CREATE TABLE IF NOT EXISTS login_attempts (
+  key        TEXT PRIMARY KEY,
+  count      INTEGER NOT NULL DEFAULT 0,
+  until      INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
 -- Pegawai dan sesi login.
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

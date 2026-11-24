@@ -34,27 +34,55 @@ async function dummy() {
 
 // ---------- Pembatas percobaan login ----------
 
-const attempts = new Map(); // key -> { count, until }
-const MAX_FAILS = 5;
+// Disimpan di SQLite (tabel login_attempts) agar penguncian bertahan saat server dimulai ulang.
+// Dua lapis: per pasangan (alamat, username) untuk menahan tebakan password pada satu akun, dan per
+// alamat untuk menahan tebakan banyak username dari satu sumber (password spraying).
+const MAX_PER_ACCOUNT = 5;   // percobaan per (alamat, username) dalam satu jendela
+const MAX_PER_ADDRESS = 20;  // percobaan per alamat dalam satu jendela
 const LOCK_MS = 5 * 60 * 1000;
+const WINDOW_MS = 15 * 60 * 1000; // percobaan lebih tua dari ini tidak dihitung lagi
 
-function checkLock(key) {
-  const a = attempts.get(key);
-  if (a && a.until > Date.now()) {
-    const mins = Math.ceil((a.until - Date.now()) / 60000);
-    throw new HttpError(429, `Terlalu banyak percobaan. Coba lagi dalam ${mins} menit`);
+const lockedError = (until) =>
+  new HttpError(429, `Terlalu banyak percobaan. Coba lagi dalam ${Math.max(1, Math.ceil((until - Date.now()) / 60000))} menit`);
+
+const putAttempt = db.prepare(
+  `INSERT INTO login_attempts (key, count, until, updated_at) VALUES (?, ?, ?, ?)
+   ON CONFLICT(key) DO UPDATE SET count = excluded.count, until = excluded.until, updated_at = excluded.updated_at`
+);
+
+// Mencatat satu percobaan SEBELUM password diverifikasi. Verifikasi (scrypt) bersifat async, jadi bila
+// pencatatan baru dilakukan setelah gagal, banyak permintaan paralel bisa lolos sebelum hitungan naik.
+// Melempar 429 bila batas terlampaui; percobaan yang melampaui batas memulai penguncian.
+function reserveAttempt(key, max) {
+  const now = Date.now();
+  const r = db.prepare('SELECT count, until, updated_at FROM login_attempts WHERE key = ?').get(key);
+  let count = 0;
+  if (r) {
+    if (r.until > now) throw lockedError(r.until);
+    const fresh = r.until === 0 && now - r.updated_at <= WINDOW_MS; // bukan bekas kunci, masih dalam jendela
+    count = fresh ? r.count : 0;
   }
+  count += 1;
+  if (count > max) {
+    const until = now + LOCK_MS;
+    putAttempt.run(key, count, until, now);
+    throw lockedError(until);
+  }
+  putAttempt.run(key, count, 0, now);
 }
 
-function recordFail(key) {
-  const a = attempts.get(key) || { count: 0, until: 0 };
-  if (a.until && a.until <= Date.now()) {
-    a.count = 0;
-    a.until = 0;
-  }
-  a.count += 1;
-  if (a.count >= MAX_FAILS) a.until = Date.now() + LOCK_MS;
-  attempts.set(key, a);
+// Login berhasil: hitungan akun dihapus, dan hitungan alamat turun satu agar pengguna sah di balik
+// satu alamat bersama (mis. NAT kantor) tidak ikut terkunci oleh percobaan yang berhasil.
+function releaseAttempts(accountKey, addressKey) {
+  db.prepare('DELETE FROM login_attempts WHERE key = ?').run(accountKey);
+  db.prepare('UPDATE login_attempts SET count = MAX(count - 1, 0) WHERE key = ? AND until = 0').run(addressKey);
+}
+
+let lastSweep = 0;
+export function sweepAttempts() {
+  const now = Date.now();
+  lastSweep = now;
+  return db.prepare('DELETE FROM login_attempts WHERE until < ? AND updated_at < ?').run(now, now - WINDOW_MS).changes;
 }
 
 // ---------- Sesi ----------
@@ -112,15 +140,16 @@ export function getSession(token) {
 
 export async function login(username, password, ip) {
   const uname = String(username || '').trim();
-  const key = `${ip}|${uname.toLowerCase()}`;
-  checkLock(key);
+  // Awalan "ip:" dan "acct:" mencegah nama pengguna tertentu (mis. "*") bertabrakan dengan kunci alamat.
+  const addressKey = `ip:${ip}`;
+  const accountKey = `acct:${ip}|${uname.toLowerCase().slice(0, 64)}`;
+  if (Date.now() - lastSweep > 60000) sweepAttempts();
+  reserveAttempt(addressKey, MAX_PER_ADDRESS);
+  reserveAttempt(accountKey, MAX_PER_ACCOUNT);
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(uname);
   const ok = await verifyPassword(String(password || ''), user ? user.password_hash : await dummy());
-  if (!user || !user.active || !ok) {
-    recordFail(key);
-    throw new HttpError(401, 'Username atau password salah');
-  }
-  attempts.delete(key);
+  if (!user || !user.active || !ok) throw new HttpError(401, 'Username atau password salah');
+  releaseAttempts(accountKey, addressKey);
   return { token: createSession(user.id), userId: user.id };
 }
 
