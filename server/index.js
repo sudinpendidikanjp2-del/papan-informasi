@@ -10,6 +10,7 @@ import * as svc from './service.js';
 import { HttpError, bus } from './service.js';
 import * as auth from './auth.js';
 import * as media from './media.js';
+import * as notify from './notify.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -152,6 +153,21 @@ async function api(req, res, url) {
       throw new HttpError(403, 'Antrian prioritas tidak tersedia di kiosk ini');
     }
     return send(res, 201, svc.createTicket(Number(b.categoryId), { priority: !!b.priority }));
+  }
+
+  // Pantau tiket dari ponsel pengunjung. Token 96 bit di URL adalah satu-satunya kunci akses.
+  if (m === 'GET' && p === '/api/push/config') return send(res, 200, notify.pushConfig());
+  const tk = p.match(/^\/api\/ticket\/([a-f0-9]{24})(\/push|\/qr\.svg)?$/);
+  if (tk) {
+    const token = tk[1];
+    if (!tk[2] && m === 'GET') return send(res, 200, svc.ticketStatus(token));
+    if (tk[2] === '/push' && m === 'POST') return send(res, 200, notify.subscribe(token, (await readJson(req)).subscription));
+    if (tk[2] === '/qr.svg' && m === 'GET') {
+      svc.ticketStatus(token); // 404 bila tiket tidak ada
+      const base = `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`;
+      res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
+      return res.end(notify.qrSvg(notify.trackUrl(token, base)));
+    }
   }
 
   // Login pegawai
@@ -363,7 +379,8 @@ function serveFile(req, res, filePath, root) {
       return;
     }
     const type = MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
-    const headers = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'no-cache' };
+    // Referrer dimatikan: URL halaman pantau memuat token tiket dan tidak boleh bocor ke pihak lain.
+    const headers = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'no-cache', 'referrer-policy': 'no-referrer' };
     // Dukungan Range agar video bisa diputar dan dicari posisinya di browser.
     const range = req.headers.range;
     if (range) {
@@ -425,6 +442,7 @@ wss.on('connection', (ws) => {
 
 db.prepare('SELECT 1').get();
 await auth.bootstrapAdmin();
+notify.init();
 
 // Bersihkan berkas unggahan yang tidak dirujuk: saat start, lalu tiap jam.
 const sweep = () => {

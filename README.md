@@ -27,6 +27,7 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Akun admin pertama |
 | `TLS_CERT`, `TLS_KEY` | Path sertifikat dan kunci privat PEM; keduanya harus diisi untuk mengaktifkan HTTPS |
 | `TRUST_PROXY` | `1` bila di belakang reverse proxy tepercaya (lihat bagian HTTPS) |
+| `VAPID_SUBJECT` | Subjek VAPID untuk notifikasi push (`mailto:` atau `https:`), opsional |
 
 ## Halaman
 
@@ -34,6 +35,7 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 |---|---|---|
 | Papan informasi | `/?screen=<slug>` | Layar publik (buka dalam mode kiosk/layar penuh) |
 | Kiosk ambil nomor | `/kiosk.html` | Pengunjung (layar sentuh) |
+| Pantau antrian | `/t.html?k=<token>` | Pengunjung, lewat QR di slip nomor |
 | Panel meja | `/operator.html` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
 | Admin | `/admin.html` | Admin: dasbor, konten, layar, kategori, meja, pegawai, laporan, pengaturan |
 
@@ -92,6 +94,19 @@ Saat memegang sebuah nomor, pegawai dapat memindahkannya ke meja lain. Nomor tet
 - Berkas unggahan yang tidak lagi dipakai dihapus otomatis (saat konten dihapus atau diganti, dan penyapuan tiap jam untuk berkas yatim yang berumur lebih dari satu jam).
 - Admin dapat memilih beberapa konten sekaligus untuk diaktifkan, dinonaktifkan, atau dihapus lewat bar aksi massal.
 
+## Notifikasi pengunjung
+
+Slip kiosk memuat kode QR ke halaman pantau (`/t.html?k=<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
+
+- **Halaman pantau**: nomor, orang di depan, perkiraan tunggu, dan status (menunggu, giliran Anda, dilayani, selesai, dilewati). Diperbarui langsung lewat WebSocket tanpa muat ulang.
+- **Peringatan di halaman** (selalu tersedia): setelah pengunjung mengetuk *Aktifkan peringatan*, ponsel berbunyi dan bergetar saat sisa antrian di depan mencapai batas "hampir giliran" (default 3, bisa diatur) dan saat dipanggil, termasuk saat dipanggil ulang. Judul tab berkedip saat giliran tiba. Peringatan ini hanya bekerja selama halaman masih terbuka, dan ponsel tidak boleh dalam mode senyap.
+- **Notifikasi push** (opsional): tetap datang walau halaman ditutup. Syaratnya, pengunjung membuka situs lewat **HTTPS**, dan **server dapat menjangkau layanan push** browser (FCM, Mozilla, Apple, atau Windows) lewat internet. Di jaringan lokal tanpa HTTPS atau tanpa akses keluar, halaman pantau dan peringatan di halaman tetap berfungsi, dan halaman menjelaskan keadaannya kepada pengunjung.
+- **Alamat QR**: di Pengaturan, isi *Alamat dasar untuk kode QR* dengan alamat yang bisa dijangkau ponsel pengunjung, mis. `http://192.168.1.10:3000`. Bila kosong, dipakai alamat yang dibuka di kiosk, sehingga kiosk yang memakai `localhost` menghasilkan QR yang tidak bisa dibuka dari ponsel (admin menampilkan peringatan untuk kasus ini).
+- **Privasi dan keamanan**: tiap tiket punya token acak 96 bit sebagai satu-satunya kunci akses, dan halaman pantau hanya menampilkan data tiket itu sendiri. Server tidak menyimpan data pribadi pengunjung. Langganan push dihapus saat tiket selesai atau dilewati, atau bila layanan push melaporkan langganan tidak berlaku. Endpoint push yang diterima dibatasi ke layanan push browser yang dikenal, supaya pengunjung tidak bisa membuat server mengirim permintaan ke alamat sembarang. Kunci VAPID dibuat otomatis dan disimpan di tabel terpisah (tidak ikut `/api/settings`).
+- Beberapa layanan push memeriksa subjek VAPID. Bila perlu, set `VAPID_SUBJECT` ke `mailto:` atau `https:` milik instansi.
+
+SMS dan WhatsApp tidak disertakan karena butuh gateway berbayar dan nomor telepon pengunjung.
+
 ## HTTPS
 
 Server dapat melayani HTTPS langsung:
@@ -114,9 +129,11 @@ server/
   service.js   logika antrian, konten, layar, kategori, meja, pengaturan
   auth.js      login, sesi, pembatas percobaan, manajemen pegawai
   media.js     konversi video (ffmpeg) dan pembersihan berkas yatim
+  notify.js    langganan dan pengiriman push, QR, kunci VAPID
   db.js        skema SQLite, migrasi ringan, dan data awal
 public/
-  display.html, kiosk.html, operator.html, admin.html
+  display.html, kiosk.html, operator.html, admin.html, t.html
+  sw.js        service worker khusus notifikasi push
   css/app.css  sistem desain bersama (token warna di :root)
   js/common.js utilitas API, WebSocket, waktu server, suara
   js/icons.js  ikon SVG
@@ -132,4 +149,5 @@ scripts/
 - Pindah antrian hanya ke meja lain, bukan ke kategori lain.
 - Papan memakai `import()` dinamis untuk pdf.js, sehingga membutuhkan browser yang cukup baru (Chrome 63 atau setara). Build pdf.js yang dipakai adalah versi *legacy* untuk kompatibilitas lebih luas.
 - Suara bel dan TTS butuh satu kali ketukan "Aktifkan" di layar setelah halaman dibuka (aturan autoplay browser). Kualitas suara TTS bergantung pada suara bahasa Indonesia yang terpasang di perangkat.
-- Belum ada notifikasi ke ponsel pengunjung (SMS atau WhatsApp).
+- Notifikasi ke ponsel pengunjung memakai halaman pantau dan push browser; belum ada SMS atau WhatsApp.
+- Pengiriman push ke layanan sungguhan (FCM dan sejenisnya) belum diuji end-to-end di lingkungan pengembangan karena butuh akses internet dan perangkat nyata; logika pemicu dan pembersihannya diuji dengan pengirim tiruan.

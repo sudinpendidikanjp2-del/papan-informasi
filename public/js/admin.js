@@ -713,6 +713,31 @@
     }
   }
 
+  // Menjelaskan alamat yang akan dipakai kode QR dan apakah push bisa berjalan di sana.
+  function describeNotify() {
+    const f = $('settingsForm').elements;
+    const typed = f.public_base_url.value.trim().replace(/\/+$/, '');
+    const effective = typed || location.origin;
+    let host = '';
+    let https = false;
+    try {
+      const u = new URL(effective);
+      host = u.hostname;
+      https = u.protocol === 'https:';
+    } catch { /* alamat belum valid; ditolak server saat disimpan */ }
+    const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host);
+    $('baseHint').innerHTML = 'Kode QR akan mengarah ke <b>' + esc(effective) + '/t.html</b>' +
+      (local ? '<br><span style="color:var(--red)">Alamat ini tidak bisa dibuka dari ponsel pengunjung. Isi dengan alamat IP atau nama server di jaringan, mis. http://192.168.1.10:3000.</span>' : '');
+    $('pushHint').textContent = !f.push_enabled.checked
+      ? 'Dimatikan. Halaman pantau tetap memberi peringatan suara dan getar selama dibuka.'
+      : https
+        ? 'Aktif. Pengunjung bisa menerima notifikasi walau halaman ditutup.'
+        : 'Hanya berjalan bila pengunjung membuka situs lewat HTTPS. Lewat HTTP, peringatan suara dan getar tetap bekerja selama halaman pantau dibuka.';
+  }
+  document.addEventListener('input', (e) => {
+    if (e.target.closest && e.target.closest('#settingsForm')) describeNotify();
+  });
+
   async function loadSettings() {
     const s = await P.api('/api/settings');
     const f = $('settingsForm').elements;
@@ -723,6 +748,10 @@
     f.sound_enabled.checked = s.sound_enabled !== '0';
     f.tts_enabled.checked = s.tts_enabled !== '0';
     f.priority_enabled.checked = s.priority_enabled === '1';
+    f.public_base_url.value = s.public_base_url || '';
+    f.notify_ahead.value = s.notify_ahead || '3';
+    f.push_enabled.checked = s.push_enabled !== '0';
+    describeNotify();
     $('logoPreview').src = s.org_logo || '';
     $('logoPreview').style.visibility = s.org_logo ? 'visible' : 'hidden';
     applyBrand(s);
@@ -751,6 +780,8 @@
           org_name: f.org_name.value, org_logo: f.org_logo.value, idle_minutes: f.idle_minutes.value,
           timezone: f.timezone.value, sound_enabled: flag(f.sound_enabled), tts_enabled: flag(f.tts_enabled),
           priority_enabled: flag(f.priority_enabled),
+          public_base_url: f.public_base_url.value.trim(), notify_ahead: f.notify_ahead.value,
+          push_enabled: flag(f.push_enabled),
         },
       });
       P.toast('Pengaturan disimpan');

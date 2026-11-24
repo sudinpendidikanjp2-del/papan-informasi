@@ -237,6 +237,17 @@
                 <label class="switch"><span><div class="t">Suara pemanggilan</div><div class="d">Membacakan nomor dan meja dalam Bahasa Indonesia</div></span><input type="checkbox" name="tts_enabled"><span class="track"></span></label>
               </div>
               <div class="card">
+                <div class="section-title">Notifikasi pengunjung</div>
+                <p class="hint" style="margin:0 0 12px">Slip kiosk memuat kode QR ke halaman pantau antrian di ponsel pengunjung: sisa antrian, perkiraan tunggu, serta peringatan suara, getar, dan push saat giliran hampir tiba dan saat dipanggil.</p>
+                <div class="field"><label>Alamat dasar untuk kode QR</label>
+                  <input name="public_base_url" placeholder="Kosong = ikut alamat yang dipakai kiosk" inputmode="url" autocomplete="off">
+                  <span class="hint" id="baseHint"></span></div>
+                <div class="field"><label>Beri tahu saat sisa antrian di depan</label>
+                  <input name="notify_ahead" type="number" min="1" max="20">
+                  <span class="hint">Peringatan "hampir giliran" dikirim ketika jumlah orang di depan sama dengan atau kurang dari angka ini.</span></div>
+                <label class="switch"><span><div class="t">Notifikasi push</div><div class="d" id="pushHint"></div></span><input type="checkbox" name="push_enabled"><span class="track"></span></label>
+              </div>
+              <div class="card">
                 <div class="section-title">Antrian</div>
                 <label class="switch"><span><div class="t">Tombol antrian prioritas di kiosk</div><div class="d">Mati secara bawaan: kiosk publik bisa disalahgunakan. Operator tetap dapat membuat nomor prioritas dari panel meja.</div></span><input type="checkbox" name="priority_enabled"><span class="track"></span></label>
               </div>

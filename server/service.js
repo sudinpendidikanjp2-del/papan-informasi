@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
 import { db, getSettings, tx } from './db.js';
 
 // Event bus: 'queue' (antrian berubah), 'call' (ada panggilan), 'content', 'settings', 'categories', 'screens'.
@@ -125,9 +126,11 @@ export function createTicket(categoryId, opts = {}) {
   const { n } = db
     .prepare('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM tickets WHERE category_id = ? AND day = ?')
     .get(cat.id, day);
+  // Token acak 96 bit: satu-satunya "kunci" untuk memantau tiket ini dari ponsel pengunjung.
+  const token = crypto.randomBytes(12).toString('hex');
   const info = db
-    .prepare('INSERT INTO tickets (category_id, counter_id, number, day, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(cat.id, counterId, n, day, priority, Date.now());
+    .prepare('INSERT INTO tickets (category_id, counter_id, number, day, priority, created_at, token) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(cat.id, counterId, n, day, priority, Date.now(), token);
   touch(cat.id);
   bus.emit('queue');
   return {
@@ -137,6 +140,60 @@ export function createTicket(categoryId, opts = {}) {
     priority: !!priority,
     ahead,
     etaMinutes,
+    token,
+  };
+}
+
+// Jumlah antrian menunggu di kategori yang sama yang akan dipanggil lebih dulu daripada tiket ini
+// (urutan sama dengan callNext: prioritas, lalu waktu ambil).
+export function aheadOf(t) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM tickets
+        WHERE category_id = ? AND day = ? AND status = 'waiting' AND id <> ?
+          AND (priority > ? OR (priority = ? AND (created_at < ? OR (created_at = ? AND id < ?))))`
+    )
+    .get(t.category_id, t.day, t.id, t.priority, t.priority, t.created_at, t.created_at, t.id).n;
+}
+
+// Status tiket untuk halaman pantau pengunjung. Hanya berisi data milik tiket itu sendiri.
+export function ticketStatus(token) {
+  const t = db
+    .prepare(
+      `SELECT t.*, cat.prefix, cat.name AS category_name, sc.name AS counter_name, dc.name AS dedicated_name
+         FROM tickets t
+         JOIN categories cat ON cat.id = t.category_id
+         LEFT JOIN counters sc ON sc.id = t.served_by
+         LEFT JOIN counters dc ON dc.id = t.counter_id
+        WHERE t.token = ?`
+    )
+    .get(String(token || ''));
+  if (!t) throw new HttpError(404, 'Tiket tidak ditemukan');
+  const day = today();
+  const settings = getSettings();
+  let ahead = null;
+  let etaMinutes = null;
+  if (t.status === 'waiting' && t.day === day) {
+    ahead = aheadOf(t);
+    const avg = avgServiceMs(t.category_id, day);
+    const { n: counters } = db.prepare('SELECT COUNT(*) AS n FROM counters WHERE active = 1 AND category_id = ?').get(t.category_id);
+    if (ahead > 0 && avg) etaMinutes = Math.max(1, Math.ceil((ahead * avg) / 60000 / Math.max(1, counters)));
+  }
+  return {
+    label: labelOf(t.prefix, t.number),
+    categoryName: t.category_name,
+    status: t.status,
+    priority: !!t.priority,
+    ahead,
+    etaMinutes,
+    counter: t.status === 'called' || t.status === 'serving' ? t.counter_name : null,
+    dedicatedTo: t.status === 'waiting' ? t.dedicated_name : null,
+    calledAt: t.called_at,
+    createdAt: t.created_at,
+    expired: t.day !== day,
+    nearAt: Math.max(1, parseInt(settings.notify_ahead || '3', 10) || 3),
+    orgName: settings.org_name,
+    timezone: settings.timezone,
   };
 }
 
@@ -228,6 +285,7 @@ export function callNext(counterId, userId = null) {
     counter: c.name,
     categoryId: t.category_id,
     priority: !!t.priority,
+    ticketId: t.id,
   };
   bus.emit('queue');
   bus.emit('call', payload);
@@ -240,7 +298,7 @@ export function recall(counterId) {
   db.prepare('UPDATE tickets SET called_at = ? WHERE id = ?').run(Date.now(), cur.id);
   touch(cur.categoryId);
   const c = counterById(counterId);
-  bus.emit('call', { label: cur.label, counter: c.name, categoryId: cur.categoryId });
+  bus.emit('call', { label: cur.label, counter: c.name, categoryId: cur.categoryId, priority: cur.priority, ticketId: cur.id });
   return { label: cur.label };
 }
 
@@ -555,10 +613,18 @@ export function deleteCounter(id) {
 
 const EDITABLE_SETTINGS = [
   'org_name', 'org_logo', 'idle_minutes', 'timezone', 'sound_enabled', 'tts_enabled', 'priority_enabled',
+  'public_base_url', 'notify_ahead', 'push_enabled',
 ];
-const BOOLEAN_SETTINGS = new Set(['sound_enabled', 'tts_enabled', 'priority_enabled']);
+const BOOLEAN_SETTINGS = new Set(['sound_enabled', 'tts_enabled', 'priority_enabled', 'push_enabled']);
 
 export function saveSettings(b) {
+  // Satu transaksi: bila satu nilai ditolak, tidak ada pengaturan lain yang ikut tersimpan.
+  tx(() => saveSettingsRows(b));
+  bus.emit('settings');
+  return { ok: true };
+}
+
+function saveSettingsRows(b) {
   for (const k of EDITABLE_SETTINGS) {
     if (b[k] === undefined) continue;
     let v = String(b[k]);
@@ -567,13 +633,22 @@ export function saveSettings(b) {
       v = String(Number.isFinite(n) ? Math.max(1, Math.min(120, n)) : 3);
     }
     if (k === 'org_name') v = v.slice(0, 120);
+    if (k === 'notify_ahead') {
+      const n = parseInt(v, 10);
+      v = String(Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 3);
+    }
+    if (k === 'public_base_url') {
+      v = v.trim().replace(/\/+$/, '');
+      // Kosong berarti ikut alamat yang dipakai pengunjung. Selain itu harus berupa alamat http(s) saja.
+      if (v && !/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/i.test(v)) {
+        throw new HttpError(400, 'Alamat dasar harus berupa URL http:// atau https:// yang valid, mis. http://192.168.1.10:3000');
+      }
+    }
     if (BOOLEAN_SETTINGS.has(k)) v = v === '0' || v === 'false' ? '0' : '1';
     db.prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
     ).run(k, v);
   }
-  bus.emit('settings');
-  return { ok: true };
 }
 
 // Angka ringkas untuk kartu KPI di dasbor admin.

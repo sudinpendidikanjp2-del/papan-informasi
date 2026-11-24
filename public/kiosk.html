@@ -42,7 +42,8 @@
 
     /* Slip nomor */
     .overlay { position: fixed; inset: 0; z-index: 40; background: rgba(15,42,107,.55); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 1.2rem; }
-    .slip { width: min(34rem, 100%); }
+    .overlay { overflow-y: auto; }
+    .slip { width: min(34rem, 100%); margin: auto; }
     .slip .hero { padding: 1.5rem; box-shadow: var(--shadow-lg); }
     .slip .hero .top { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .8rem; }
     .slip .hero .big { font-size: clamp(5rem, 12vw, 8rem); margin: .3rem 0 .4rem; }
@@ -52,7 +53,11 @@
     .slip .hero-stat .v { font-size: 1.9rem; }
     .slip .note { text-align: center; color: #fff; margin-top: 1rem; font-size: 1.1rem; }
     .slip .life { height: .35rem; background: rgba(255,255,255,.25); border-radius: 1rem; margin-top: .9rem; overflow: hidden; }
-    .slip .life i { display: block; height: 100%; background: var(--yellow); width: 100%; transform-origin: left; animation: shrink 9s linear forwards; }
+    .slip .life i { display: block; height: 100%; background: var(--yellow); width: 100%; transform-origin: left; animation: shrink 20s linear forwards; }
+    .slip .track-card { display: flex; align-items: center; gap: 1rem; background: var(--surface); border-radius: 1.4rem; padding: .9rem 1.1rem; margin-top: .9rem; box-shadow: var(--shadow-lg); }
+    .slip .track-card img { width: 7.5rem; height: 7.5rem; flex: none; border-radius: .6rem; background: #fff; }
+    .slip .track-card .t { font-weight: 700; font-size: 1.15rem; }
+    .slip .track-card .d { color: var(--ink-2); font-size: .98rem; margin-top: .25rem; }
     @keyframes shrink { to { transform: scaleX(0); } }
     .hero .hero-pill.y { background: var(--yellow); color: var(--ink); font-weight: 700; }
   </style>
@@ -100,7 +105,14 @@
         </div>
         <div class="life"><i id="sLife"></i></div>
       </div>
-      <div class="note">Silakan menunggu hingga nomor Anda dipanggil.</div>
+      <div class="track-card hidden" id="track">
+        <img id="qr" alt="Kode QR untuk memantau antrian">
+        <div>
+          <div class="t">Pantau dari ponsel Anda</div>
+          <div class="d">Pindai kode QR untuk melihat sisa antrian dan mendapat peringatan saat giliran Anda tiba.</div>
+        </div>
+      </div>
+      <div class="note">Silakan menunggu hingga nomor Anda dipanggil. Ketuk layar untuk menutup.</div>
     </div>
   </div>
 
@@ -177,6 +189,11 @@
           const sp = $('sPrio');
           sp.innerHTML = t.priority ? P.icon('star') + 'Prioritas' : '';
           sp.classList.toggle('hidden', !t.priority);
+          // QR ke halaman pantau di ponsel; disembunyikan bila gambar gagal dimuat.
+          const qr = $('qr');
+          $('track').classList.toggle('hidden', !t.token);
+          qr.onerror = () => $('track').classList.add('hidden');
+          if (t.token) qr.src = '/api/ticket/' + t.token + '/qr.svg';
           // Mulai ulang animasi sisa waktu tampil slip.
           const life = $('sLife');
           life.style.animation = 'none';
@@ -185,7 +202,7 @@
           $('overlay').classList.remove('hidden');
           if (settings.sound_enabled !== '0') P.chime();
           clearTimeout(hideTimer);
-          hideTimer = setTimeout(close, 9000);
+          hideTimer = setTimeout(close, 20000);
           $('prio').checked = false;
           loadCats().catch(() => {});
         } catch (e) {
