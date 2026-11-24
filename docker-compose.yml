@@ -1,0 +1,33 @@
+# Menjalankan Papan Informasi dengan Docker Compose.
+# CATATAN: belum diuji di lingkungan pengembangan (daemon Docker tidak tersedia di sana).
+#
+#   cp deploy/papan-informasi.env.example .env   # lalu edit (HOST dan DATA_DIR di .env diabaikan: compose menimpanya)
+#   docker compose up -d --build
+#
+# Di belakang reverse proxy pada mesin yang sama, port dipublikasikan hanya ke loopback (lihat "ports")
+# dan set TRUST_PROXY=1 di .env. Tanpa proxy, ganti ke "3000:3000".
+services:
+  papan:
+    build: .
+    image: papan-informasi:latest
+    restart: unless-stopped
+    init: true                 # proses init yang meneruskan sinyal dan memanen proses anak (ffmpeg)
+    stop_grace_period: 15s     # server butuh sampai 10 detik untuk menutup dengan bersih
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      PORT: "3000"
+      HOST: ""                 # di dalam container harus mendengarkan semua antarmuka, walau .env mengisi HOST lain
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - papan-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  papan-data:

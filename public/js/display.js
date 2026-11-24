@@ -532,6 +532,15 @@
     if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
   });
 
+  // ?sound=on: untuk perangkat kiosk yang browsernya dijalankan dengan --autoplay-policy=no-user-gesture-required
+  // (lihat deploy/kiosk-display.sh). Bunyi diaktifkan tanpa menunggu ketukan; tanpa flag itu browser tetap
+  // menahan audio sampai ada interaksi, jadi tanpa parameter ini overlay "Aktifkan" tetap dipakai.
+  if (new URLSearchParams(location.search).get('sound') === 'on') {
+    unlocked = true;
+    $('unlock').classList.add('hidden');
+    if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
+  }
+
   P.connectWS((msg) => {
     switch (msg.type) {
       case 'hello': loadAll(); break;

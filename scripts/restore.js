@@ -121,7 +121,8 @@ try {
   // ---- 5. Pindahkan data lama ke .bak lalu pasang yang baru; batalkan bila gagal di tengah jalan ----
   const bak = path.join(opt.data, `.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   fs.mkdirSync(bak);
-  const isMeta = (n) => n.startsWith('.bak-') || n.startsWith('.restore-');
+  // Folder backups (bila arsip disimpan di dalam direktori data, mis. di Docker) dibiarkan di tempatnya.
+  const isMeta = (n) => n.startsWith('.bak-') || n.startsWith('.restore-') || n === 'backups';
   const moved = [];
   try {
     for (const n of fs.readdirSync(opt.data).filter((f) => !isMeta(f))) {

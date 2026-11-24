@@ -1,0 +1,50 @@
+# Layanan systemd untuk Papan Informasi.
+# Pasang: sudo cp deploy/papan-informasi.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# Jalur node di bawah mengikuti paket resmi (/usr/bin/node). Bila Node dipasang lewat nvm atau
+# /opt, ganti ExecStart dengan jalur dari "which node".
+[Unit]
+Description=Papan Informasi dan Nomor Antrian
+Documentation=file:///opt/papan-informasi/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=papan
+Group=papan
+WorkingDirectory=/opt/papan-informasi
+EnvironmentFile=/etc/papan-informasi.env
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+# Server menutup dengan bersih dalam 10 detik setelah SIGTERM; beri sedikit kelonggaran.
+TimeoutStopSec=15
+
+# Direktori data (/var/lib/papan-informasi) dibuat dan dimiliki pengguna layanan oleh systemd.
+StateDirectory=papan-informasi
+StateDirectoryMode=0700
+UMask=0077
+
+# Pengerasan. MemoryDenyWriteExecute sengaja tidak dipakai karena V8 (JIT) membutuhkan memori W+X.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

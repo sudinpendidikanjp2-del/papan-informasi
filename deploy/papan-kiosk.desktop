@@ -1,0 +1,9 @@
+# Mulai otomatis papan di layar saat pengguna desktop login.
+# Pasang: mkdir -p ~/.config/autostart && cp deploy/papan-kiosk.desktop ~/.config/autostart/
+# Ganti SERVER dan slug layar, dan jalur skrip bila repo tidak berada di /opt/papan-informasi.
+# Pastikan desktop login otomatis (Raspberry Pi: sudo raspi-config > System Options > Boot / Auto Login).
+[Desktop Entry]
+Type=Application
+Name=Papan Informasi (kiosk)
+Exec=/opt/papan-informasi/deploy/kiosk-display.sh "http://SERVER:3000/?screen=lobi&sound=on"
+X-GNOME-Autostart-enabled=true

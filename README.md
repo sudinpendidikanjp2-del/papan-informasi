@@ -36,7 +36,7 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 
 | Halaman | URL | Pengguna |
 |---|---|---|
-| Papan informasi | `/?screen=<slug>` | Layar publik (buka dalam mode kiosk/layar penuh) |
+| Papan informasi | `/?screen=<slug>` | Layar publik (buka dalam mode kiosk/layar penuh). Tambah `&sound=on` pada perangkat kiosk yang browsernya berflag autoplay (lihat panduan penerapan) |
 | Kiosk ambil nomor | `/kiosk.html` | Pengunjung (layar sentuh) |
 | Pantau antrian | `/t.html?k=<token>` | Pengunjung, lewat QR di slip nomor |
 | Panel meja | `/operator.html` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
@@ -148,6 +148,12 @@ Lihat juga bagian Login pegawai dan HTTPS di atas.
 - **Backup**: `npm run backup` (atau `node scripts/backup.js`) membuat snapshot database yang konsisten (aman saat server hidup dan menulis) ditambah berkas unggahan menjadi satu arsip `.tar.gz` berizin `0600` di folder `backups` di samping direktori data. Opsi: `--out DIR`, `--keep N` (default 14), `--no-uploads`, `--data DIR`. Nama arsip memuat waktu sampai milidetik sehingga tidak pernah saling menimpa. Arsip memuat hash password dan kunci VAPID, jadi simpan di tempat yang hanya bisa dibaca pemilik.
 - **Restore**: `node scripts/restore.js <arsip> --yes`. Tanpa `--yes` hanya pratinjau. Skrip memeriksa arsip sebelum mengekstrak (path berbahaya, tautan, integritas database, tabel yang diharapkan), menolak berjalan bila server masih hidup (`--force` untuk melewatinya, mis. server dalam container), dan **tidak menghapus data lama**: data saat ini dipindahkan ke `<data>/.bak-<waktu>` sehingga pemulihan bisa dibatalkan.
 
+## Penerapan
+
+Panduan lengkap memasang di server dan layar sungguhan ada di **[docs/PENERAPAN.md](docs/PENERAPAN.md)**: systemd, Docker Compose, HTTPS (Caddy, nginx, atau langsung), layar kiosk, backup terjadwal, pembaruan, pemantauan, daftar periksa keamanan, dan pemecahan masalah. Berkas contoh ada di [`deploy/`](deploy): layanan dan timer systemd, contoh konfigurasi lingkungan, Caddyfile, konfigurasi nginx, dan skrip layar kiosk. Dockerfile dan `docker-compose.yml` ada di akar repo.
+
+Yang sudah diuji: unit systemd (valid menurut `systemd-analyze verify`), skrip backup dan restore, skrip layar kiosk (dengan peramban tiruan), dan sintaks compose. Yang belum diuji di lingkungan pengembangan: build `Dockerfile`, contoh Caddy dan nginx, bunyi pada perangkat kiosk sungguhan, dan push ke layanan sungguhan.
+
 ## Struktur
 
 ```
@@ -170,6 +176,8 @@ public/
   js/display.js logika papan informasi
   js/kiosk.js, js/operator.js, js/track.js, js/admin.js  logika halaman masing-masing
   js/admin.js  logika dasbor admin
+deploy/       contoh systemd, proxy, dan skrip layar kiosk
+docs/         panduan penerapan
 scripts/
   copy-vendor.js  menyalin pdf.js ke public/vendor (dipanggil postinstall)
   backup.js       backup database dan unggahan menjadi satu arsip

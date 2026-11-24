@@ -1,0 +1,31 @@
+# Backup harian Papan Informasi (dipicu papan-backup.timer).
+# Arsip ditulis ke /var/lib/papan-informasi-backups. Salin secara berkala ke luar mesin ini
+# (disk lain, NAS, atau penyimpanan cloud); backup di mesin yang sama tidak melindungi dari kerusakan disk.
+[Unit]
+Description=Backup Papan Informasi
+Documentation=file:///opt/papan-informasi/README.md
+
+[Service]
+Type=oneshot
+User=papan
+Group=papan
+WorkingDirectory=/opt/papan-informasi
+Environment=DATA_DIR=/var/lib/papan-informasi
+Environment=BACKUP_DIR=/var/lib/papan-informasi-backups
+ExecStart=/usr/bin/node scripts/backup.js --keep 14
+StateDirectory=papan-informasi papan-informasi-backups
+StateDirectoryMode=0700
+UMask=0077
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=

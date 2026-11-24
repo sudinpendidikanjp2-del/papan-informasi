@@ -1,0 +1,23 @@
+# Contoh Caddy sebagai reverse proxy dengan HTTPS otomatis.
+# CATATAN: contoh ini belum diuji di lingkungan pengembangan (Caddy tidak terpasang di sana).
+#
+# Ganti antrian.instansi.go.id dengan nama domain yang mengarah ke server ini. Caddy memperoleh dan
+# memperbarui sertifikat Let's Encrypt sendiri. Untuk jaringan lokal tanpa domain publik, pakai
+# "tls internal" (CA Caddy sendiri; perangkat harus memercayai CA itu) atau terminasi TLS di tempat lain.
+#
+# Di berkas /etc/papan-informasi.env set: HOST=127.0.0.1 dan TRUST_PROXY=1
+antrian.instansi.go.id {
+	# Unggahan video bisa besar (batas aplikasi 300 MB).
+	request_body {
+		max_size 310MB
+	}
+
+	reverse_proxy 127.0.0.1:3000 {
+		# WebSocket (/ws) lewat reverse_proxy tanpa pengaturan tambahan.
+		# Caddy sudah menambahkan X-Forwarded-For dan X-Forwarded-Proto.
+		health_uri /healthz
+		health_interval 30s
+	}
+
+	encode zstd gzip
+}
