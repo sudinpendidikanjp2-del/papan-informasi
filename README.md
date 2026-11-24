@@ -27,6 +27,7 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Akun admin pertama |
 | `TLS_CERT`, `TLS_KEY` | Path sertifikat dan kunci privat PEM; keduanya harus diisi untuk mengaktifkan HTTPS |
 | `TRUST_PROXY` | `1` bila di belakang reverse proxy tepercaya (lihat bagian HTTPS) |
+| `HOST` | Antarmuka yang didengarkan, mis. `127.0.0.1` di belakang reverse proxy (default: semua) |
 | `TICKET_RATE` | Batas pengambilan nomor per alamat per menit di kiosk (default 30) |
 | `WS_MAX_PER_IP` | Batas koneksi WebSocket per alamat (default 100) |
 | `VAPID_SUBJECT` | Subjek VAPID untuk notifikasi push (`mailto:` atau `https:`), opsional |
@@ -140,6 +141,13 @@ Bila server berada di belakang reverse proxy yang menangani HTTPS, set `TRUST_PR
 
 Lihat juga bagian Login pegawai dan HTTPS di atas.
 
+## Operasional
+
+- **Kesehatan**: `GET /healthz` menjawab `200 {"ok":true}` tanpa autentikasi dan tanpa membuka data apa pun, atau `503` bila database tidak bisa dibaca atau server sedang berhenti. Cocok untuk pemantauan, systemd, dan Docker.
+- **Penutupan anggun**: pada `SIGTERM`/`SIGINT` server berhenti menerima koneksi, memberi tahu klien WebSocket (kode 1001), menghentikan konversi video dan membuang berkas sementaranya, menghapus unggahan yang belum selesai, menutup database, lalu keluar (batas 10 detik). Berkas `papan.pid` di direktori data menandai server yang sedang berjalan.
+- **Backup**: `npm run backup` (atau `node scripts/backup.js`) membuat snapshot database yang konsisten (aman saat server hidup dan menulis) ditambah berkas unggahan menjadi satu arsip `.tar.gz` berizin `0600` di folder `backups` di samping direktori data. Opsi: `--out DIR`, `--keep N` (default 14), `--no-uploads`, `--data DIR`. Nama arsip memuat waktu sampai milidetik sehingga tidak pernah saling menimpa. Arsip memuat hash password dan kunci VAPID, jadi simpan di tempat yang hanya bisa dibaca pemilik.
+- **Restore**: `node scripts/restore.js <arsip> --yes`. Tanpa `--yes` hanya pratinjau. Skrip memeriksa arsip sebelum mengekstrak (path berbahaya, tautan, integritas database, tabel yang diharapkan), menolak berjalan bila server masih hidup (`--force` untuk melewatinya, mis. server dalam container), dan **tidak menghapus data lama**: data saat ini dipindahkan ke `<data>/.bak-<waktu>` sehingga pemulihan bisa dibatalkan.
+
 ## Struktur
 
 ```
@@ -164,6 +172,8 @@ public/
   js/admin.js  logika dasbor admin
 scripts/
   copy-vendor.js  menyalin pdf.js ke public/vendor (dipanggil postinstall)
+  backup.js       backup database dan unggahan menjadi satu arsip
+  restore.js      pulihkan dari arsip backup
 ```
 
 ## Batasan saat ini

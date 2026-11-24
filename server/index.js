@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { DATA_DIR, db, getSettings } from './db.js';
+import { DATA_DIR, db, dbOk, getSettings } from './db.js';
 import * as svc from './service.js';
 import { HttpError, bus } from './service.js';
 import * as auth from './auth.js';
@@ -358,6 +358,10 @@ function dropIfUnused(name) {
   if (!inUse) fs.unlink(path.join(UPLOAD_DIR, safe), () => {});
 }
 
+// Berkas unggahan yang sedang diterima. Saat server berhenti, berkasnya dihapus secara sinkron: proses bisa
+// keluar sebelum peristiwa 'close' pada koneksi yang diputus paksa sempat membersihkannya.
+const activeUploads = new Set();
+
 // Unggah file mentah: header x-filename berisi nama asli. Disimpan dengan nama acak.
 // Video diubah ke MP4 H.264 oleh ffmpeg (bila tersedia); responsnya status 'processing' dan
 // klien memantau lewat /api/admin/upload/:file/status.
@@ -381,13 +385,16 @@ function handleUpload(req, url) {
     const name = id + (transcode ? '.mp4' : ext);
     const dest = path.join(UPLOAD_DIR, transcode ? `${id}.src${ext}` : name);
     const out = fs.createWriteStream(dest);
+    activeUploads.add(dest);
     let size = 0;
     let failed = false;
     const fail = (err) => {
       if (failed) return;
       failed = true;
+      activeUploads.delete(dest);
       out.destroy();
-      fs.unlink(dest, () => {});
+      // Sinkron: saat server berhenti proses bisa keluar sebelum unlink asinkron selesai.
+      try { fs.unlinkSync(dest); } catch { /* belum dibuat atau sudah terhapus */ }
       reject(err);
     };
     req.on('data', (chunk) => {
@@ -395,11 +402,16 @@ function handleUpload(req, url) {
       if (size > MAX_UPLOAD) fail(new HttpError(413, 'File melebihi 300 MB'));
     });
     req.pipe(out);
+    // Klien terputus sebelum badan selesai (Wi-Fi putus, tab ditutup, server berhenti): buang berkas setengah jadi.
+    req.on('close', () => {
+      if (!req.complete) fail(new HttpError(400, 'Unggahan terputus sebelum selesai'));
+    });
     out.on('finish', () => {
       if (failed) return;
       // Periksa isi terhadap ekstensi (tanda tangan berkas; SVG tanpa skrip) sebelum menerima.
       const verdict = checkUpload(dest, ext);
       if (!verdict.ok) return fail(new HttpError(400, verdict.reason));
+      activeUploads.delete(dest); // selesai dan sah: kepemilikan berpindah (konversi video atau penyimpanan konten)
       if (transcode) {
         media.enqueueTranscode(dest, path.join(UPLOAD_DIR, name), name);
         return resolve({ file: name, url: `/uploads/${name}`, size, status: 'processing' });
@@ -454,6 +466,16 @@ function serveFile(req, res, filePath, root) {
 
 // ---------- Server ----------
 
+// Pemeriksaan kesehatan untuk pemantauan, systemd, dan Docker. Tanpa autentikasi dan sengaja minim
+// informasi: hanya hidup atau tidak. Saat server berhenti ia menjawab 503 agar balancer berhenti mengirim lalu lintas.
+let shuttingDown = false;
+function health(res) {
+  res.setHeader('cache-control', 'no-store');
+  if (shuttingDown) return send(res, 503, { ok: false, reason: 'berhenti' });
+  if (!dbOk()) return send(res, 503, { ok: false, reason: 'database' });
+  return send(res, 200, { ok: true, uptime: Math.round(process.uptime()) });
+}
+
 // Kebijakan konten: skrip hanya dari asal sendiri (tanpa skrip inline), gaya inline diizinkan karena
 // atribut style dinamis dipakai di banyak tempat. Worker blob diperlukan sebagai cadangan pdf.js.
 const CSP = [
@@ -502,6 +524,7 @@ async function handler(req, res) {
   }
   setSecurityHeaders(req, res, url.pathname);
   try {
+    if (url.pathname === '/healthz') return health(res);
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (url.pathname.startsWith('/uploads/')) {
       return serveFile(req, res, path.join(UPLOAD_DIR, path.basename(url.pathname)), UPLOAD_DIR);
@@ -608,6 +631,54 @@ setInterval(sweep, 60 * 60 * 1000).unref();
 if (!media.ffmpegAvailable) console.warn('[papan] ffmpeg tidak ditemukan: video tidak akan dikonversi.');
 if (TRUST_PROXY) console.log('[papan] TRUST_PROXY aktif: header X-Forwarded-* dipercaya.');
 
-server.listen(PORT, () => {
-  console.log(`[papan] berjalan di ${SCHEME}://localhost:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
+// ---------- Penutupan anggun ----------
+
+// Berkas PID memungkinkan skrip restore memastikan server sudah berhenti sebelum data diganti.
+const PID_FILE = path.join(DATA_DIR, 'papan.pid');
+const removePid = () => {
+  try {
+    // Hanya hapus bila masih milik proses ini.
+    if (fs.readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) fs.unlinkSync(PID_FILE);
+  } catch { /* tidak ada atau bukan milik kita */ }
+};
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[papan] ${signal} diterima, menutup server...`);
+  const force = setTimeout(() => {
+    console.error('[papan] batas waktu penutupan (10 dtk) terlampaui, keluar paksa');
+    removePid();
+    process.exit(1);
+  }, 10000);
+  force.unref();
+
+  clearInterval(wsHeartbeat);
+  // Berhenti menerima koneksi baru; koneksi diam ditutup, WebSocket diberi tahu, dan sisa koneksi
+  // aktif (mis. unggahan yang masih berjalan) diputus setelah 3 detik.
+  const closed = new Promise((resolve) => server.close(() => resolve()));
+  server.closeIdleConnections();
+  for (const ws of wss.clients) {
+    try { ws.close(1001, 'Server berhenti'); } catch { /* sudah tertutup */ }
+  }
+  setTimeout(() => server.closeAllConnections(), 3000).unref();
+
+  await Promise.all([closed, media.shutdown()]);
+  for (const f of activeUploads) {
+    try { fs.unlinkSync(f); } catch { /* sudah terhapus */ }
+  }
+  try { db.close(); } catch { /* sudah tertutup */ }
+  removePid();
+  console.log('[papan] berhenti dengan bersih');
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('exit', removePid);
+
+// HOST membatasi antarmuka yang didengarkan (mis. 127.0.0.1 di belakang reverse proxy). Kosong = semua.
+const HOST = process.env.HOST || '';
+server.listen(PORT, HOST || undefined, () => {
+  fs.writeFileSync(PID_FILE, String(process.pid));
+  console.log(`[papan] berjalan di ${SCHEME}://${HOST || 'localhost'}:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
 });

@@ -19,6 +19,8 @@ export const ffmpegAvailable = (() => {
 const jobs = new Map(); // name -> { status: 'processing'|'error', error? }
 const pending = [];
 let running = false;
+let current = null;       // proses ffmpeg yang sedang berjalan
+let stopping = false;     // server sedang berhenti: jangan mulai job baru
 
 export function status(uploadDir, name) {
   const job = jobs.get(name);
@@ -41,7 +43,7 @@ export function enqueueTranscode(srcPath, destPath, name) {
 }
 
 function pump() {
-  if (running) return;
+  if (running || stopping) return;
   const next = pending.shift();
   if (!next) return;
   running = true;
@@ -56,12 +58,14 @@ function pump() {
     tmp,
   ];
   const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  current = p;
   let tail = '';
   p.stderr.on('data', (d) => {
     tail = (tail + d.toString()).slice(-600);
   });
   const finish = (ok, message) => {
     running = false;
+    current = null;
     fs.unlink(srcPath, () => {});
     if (ok) {
       fs.rename(tmp, destPath, (err) => {
@@ -106,4 +110,18 @@ export function cleanupUploads(uploadDir, graceMs = 60 * 60 * 1000) {
     }
   }
   return removed;
+}
+
+// Penutupan server: hentikan konversi yang berjalan dan buang antriannya. Berkas sementara (.part) dan
+// sumber video dihapus oleh handler penutupan proses ffmpeg; admin akan melihat status "hilang" dan
+// diminta mengunggah ulang videonya.
+export function shutdown() {
+  stopping = true;
+  pending.length = 0;
+  return new Promise((resolve) => {
+    if (!current) return resolve();
+    // Tunggu proses benar-benar berhenti agar berkas .part sempat dihapus sebelum server keluar.
+    current.once('close', () => setTimeout(resolve, 100));
+    try { current.kill('SIGTERM'); } catch { resolve(); }
+  });
 }

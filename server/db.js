@@ -181,6 +181,16 @@ const DEFAULT_SETTINGS = {
   push_enabled: '1',
 };
 
+// Untuk /healthz: apakah database masih bisa dibaca.
+export function dbOk() {
+  try {
+    db.prepare('SELECT 1').get();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getSecret(key) {
   const r = db.prepare('SELECT value FROM secrets WHERE key = ?').get(key);
   return r ? r.value : null;
