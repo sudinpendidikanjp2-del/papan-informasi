@@ -2,7 +2,7 @@
 
 Panduan memasang Papan Informasi di server dan layar sungguhan. Semua berkas contoh ada di folder [`deploy/`](../deploy). Fitur dan konfigurasi aplikasi dijelaskan di [README](../README.md).
 
-> **Yang sudah dan belum diuji.** Unit systemd, skrip backup/restore, skrip layar kiosk (dengan peramban tiruan), dan berkas `docker-compose.yml` (validasi sintaks) sudah diuji. **Belum diuji**: `Dockerfile` (build dan jalan), contoh Caddy dan nginx, bunyi di perangkat kiosk sungguhan, dan pengiriman notifikasi push ke layanan push sungguhan. Uji bagian-bagian itu di lingkungan Anda sebelum dipakai untuk layanan publik.
+> **Yang sudah dan belum diuji.** Unit systemd, skrip backup/restore, skrip layar kiosk (dengan peramban tiruan), `Dockerfile`, dan `docker-compose.yml` sudah diuji (skrip uji asap Docker, lokal dan di CI). **Belum diuji**: contoh Caddy dan nginx, bunyi di perangkat kiosk sungguhan, dan pengiriman notifikasi push ke layanan push sungguhan. Uji bagian-bagian itu di lingkungan Anda sebelum dipakai untuk layanan publik.
 
 ## Isi
 
@@ -72,7 +72,7 @@ journalctl -u papan-informasi | grep AUDIT # log audit: login, pegawai, pengatur
 
 ## 3. Alternatif: Docker Compose
 
-> Berkas `Dockerfile` belum diuji build-nya di lingkungan pengembangan. Coba dulu di mesin non-produksi.
+> Build `Dockerfile` dan siklus hidup container (jalan, sehat, berhenti bersih, data bertahan, backup dan restore, compose) diuji otomatis oleh `test/docker-smoke.sh`, juga di CI.
 
 ```bash
 git clone https://github.com/sudinpendidikanjp2-del/papan-informasi && cd papan-informasi

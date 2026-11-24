@@ -1,5 +1,7 @@
 # Papan Informasi & Nomor Antrian
 
+![CI](../../actions/workflows/ci.yml/badge.svg)
+
 Papan informasi digital untuk beberapa layar publik (landscape), dengan nomor antrian yang dipanggil ke meja layanan.
 Dibangun dengan Node.js (tanpa build step), SQLite bawaan Node, dan WebSocket untuk sinkronisasi realtime.
 
@@ -152,7 +154,7 @@ Lihat juga bagian Login pegawai dan HTTPS di atas.
 
 Panduan lengkap memasang di server dan layar sungguhan ada di **[docs/PENERAPAN.md](docs/PENERAPAN.md)**: systemd, Docker Compose, HTTPS (Caddy, nginx, atau langsung), layar kiosk, backup terjadwal, pembaruan, pemantauan, daftar periksa keamanan, dan pemecahan masalah. Berkas contoh ada di [`deploy/`](deploy): layanan dan timer systemd, contoh konfigurasi lingkungan, Caddyfile, konfigurasi nginx, dan skrip layar kiosk. Dockerfile dan `docker-compose.yml` ada di akar repo.
 
-Yang sudah diuji: unit systemd (valid menurut `systemd-analyze verify`), skrip backup dan restore, skrip layar kiosk (dengan peramban tiruan), dan sintaks compose. Yang belum diuji di lingkungan pengembangan: build `Dockerfile`, contoh Caddy dan nginx, bunyi pada perangkat kiosk sungguhan, dan push ke layanan sungguhan.
+Yang sudah diuji: unit systemd (valid menurut `systemd-analyze verify`), skrip backup dan restore, skrip layar kiosk (dengan peramban tiruan), serta `Dockerfile` dan compose (`test/docker-smoke.sh`, juga di CI). Yang belum diuji: contoh Caddy dan nginx, bunyi pada perangkat kiosk sungguhan, dan push ke layanan sungguhan.
 
 ## Pengujian
 
@@ -165,6 +167,10 @@ npm run test:e2e     # e2e Playwright di browser sungguhan (butuh Playwright dan
 `npm test` memakai pelari bawaan Node (`node --test`) dan tidak butuh dependensi tambahan. Tes integrasi menjalankan **server sungguhan** di port acak dengan direktori data sementara, jadi yang diuji adalah perilaku HTTP, WebSocket, sinyal, dan berkas yang sebenarnya. Cakupannya: validasi unggahan, logika antrian (urutan, prioritas, khusus meja, pindah ke meja dan kategori lain, filter layar), notifikasi (pemicu, pembersihan, penolakan SSRF), autentikasi dan pembatas login (termasuk bertahan setelah restart dan permintaan paralel), header keamanan dan input rusak, batas WebSocket, log audit, penutupan anggun, serta backup dan restore (termasuk arsip berbahaya).
 
 `npm run test:e2e` menyalakan server segar untuk tiap skrip, membuat fixture sendiri (PNG, PDF 3 halaman, WebM; ffmpeg dipakai bila ada), lalu menjalankan alur lengkap di Chromium: admin, kiosk, panel meja, halaman pantau, pindah antrian, PDF per halaman, dan audit XSS dengan payload di semua field. Tangkapan layar disimpan di folder sementara yang dicetak di akhir. Playwright dicari secara lokal, lalu secara global (`npm root -g`); bila belum ada: `npm i -D playwright && npx playwright install chromium`.
+
+`test/docker-smoke.sh` membangun image lalu menguji: isi image, pengguna non-root, kesehatan, header, tulis ke volume, penutupan anggun (`docker stop`), persistensi, backup dan restore di dalam container, serta compose. Butuh Docker; bila apt tidak terjangkau dari jaringan build: `DOCKER_NETWORK=host APT_PACKAGES="" ./test/docker-smoke.sh` (tambahkan `SKIP_BUILD=1` untuk memakai image yang sudah ada).
+
+**CI** (`.github/workflows/ci.yml`) menjalankan `npm test` di Node 22 dan 24 beserta `npm audit`, e2e Playwright, dan uji Docker pada setiap push dan pull request.
 
 ## Struktur
 

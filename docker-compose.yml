@@ -1,5 +1,5 @@
 # Menjalankan Papan Informasi dengan Docker Compose.
-# CATATAN: belum diuji di lingkungan pengembangan (daemon Docker tidak tersedia di sana).
+# Diuji oleh test/docker-smoke.sh (juga berjalan di CI).
 #
 #   cp deploy/papan-informasi.env.example .env   # lalu edit (HOST dan DATA_DIR di .env diabaikan: compose menimpanya)
 #   docker compose up -d --build

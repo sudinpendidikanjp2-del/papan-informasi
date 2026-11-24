@@ -1,5 +1,5 @@
-# Image Papan Informasi. CATATAN: berkas ini belum dibangun atau diuji di lingkungan pengembangan
-# (daemon Docker tidak tersedia di sana). Uji dengan "docker compose up --build" sebelum dipakai.
+# Image Papan Informasi. Diuji oleh test/docker-smoke.sh (build, non-root, volume, penutupan anggun,
+# backup/restore, compose); skrip yang sama berjalan di CI.
 FROM node:22-slim
 
 # Paket sistem: ffmpeg untuk konversi video, tar untuk skrip backup/restore, ca-certificates agar server
