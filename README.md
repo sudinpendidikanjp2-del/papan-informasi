@@ -154,6 +154,18 @@ Panduan lengkap memasang di server dan layar sungguhan ada di **[docs/PENERAPAN.
 
 Yang sudah diuji: unit systemd (valid menurut `systemd-analyze verify`), skrip backup dan restore, skrip layar kiosk (dengan peramban tiruan), dan sintaks compose. Yang belum diuji di lingkungan pengembangan: build `Dockerfile`, contoh Caddy dan nginx, bunyi pada perangkat kiosk sungguhan, dan push ke layanan sungguhan.
 
+## Pengujian
+
+```bash
+npm test             # unit dan integrasi: 155 tes, sekitar 10 detik, tanpa browser
+npm run test:slow    # sama, ditambah tes slowloris (menunggu ~25 detik)
+npm run test:e2e     # e2e Playwright di browser sungguhan (butuh Playwright dan Chromium)
+```
+
+`npm test` memakai pelari bawaan Node (`node --test`) dan tidak butuh dependensi tambahan. Tes integrasi menjalankan **server sungguhan** di port acak dengan direktori data sementara, jadi yang diuji adalah perilaku HTTP, WebSocket, sinyal, dan berkas yang sebenarnya. Cakupannya: validasi unggahan, logika antrian (urutan, prioritas, khusus meja, pindah ke meja dan kategori lain, filter layar), notifikasi (pemicu, pembersihan, penolakan SSRF), autentikasi dan pembatas login (termasuk bertahan setelah restart dan permintaan paralel), header keamanan dan input rusak, batas WebSocket, log audit, penutupan anggun, serta backup dan restore (termasuk arsip berbahaya).
+
+`npm run test:e2e` menyalakan server segar untuk tiap skrip, membuat fixture sendiri (PNG, PDF 3 halaman, WebM; ffmpeg dipakai bila ada), lalu menjalankan alur lengkap di Chromium: admin, kiosk, panel meja, halaman pantau, pindah antrian, PDF per halaman, dan audit XSS dengan payload di semua field. Tangkapan layar disimpan di folder sementara yang dicetak di akhir. Playwright dicari secara lokal, lalu secara global (`npm root -g`); bila belum ada: `npm i -D playwright && npx playwright install chromium`.
+
 ## Struktur
 
 ```
@@ -176,6 +188,7 @@ public/
   js/display.js logika papan informasi
   js/kiosk.js, js/operator.js, js/track.js, js/admin.js  logika halaman masing-masing
   js/admin.js  logika dasbor admin
+test/         tes unit, integrasi (npm test), dan e2e (test/e2e)
 deploy/       contoh systemd, proxy, dan skrip layar kiosk
 docs/         panduan penerapan
 scripts/
