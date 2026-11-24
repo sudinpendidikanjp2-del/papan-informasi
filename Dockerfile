@@ -2,10 +2,16 @@
 # (daemon Docker tidak tersedia di sana). Uji dengan "docker compose up --build" sebelum dipakai.
 FROM node:22-slim
 
-# ffmpeg untuk konversi video, tar untuk skrip backup/restore.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg tar ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# Paket sistem: ffmpeg untuk konversi video, tar untuk skrip backup/restore, ca-certificates agar server
+# bisa memverifikasi TLS saat mengirim notifikasi push. Dapat diubah, mis. tanpa ffmpeg (image lebih kecil,
+# video disimpan apa adanya): docker build --build-arg APT_PACKAGES="tar ca-certificates" .
+# Nilai kosong melewati apt sepenuhnya (untuk lingkungan build tanpa akses ke repositori Debian).
+ARG APT_PACKAGES="ffmpeg tar ca-certificates"
+RUN if [ -n "$APT_PACKAGES" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends $APT_PACKAGES \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /app
 

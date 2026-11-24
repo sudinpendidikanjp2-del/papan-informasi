@@ -9,17 +9,18 @@
 services:
   papan:
     build: .
-    image: papan-informasi:latest
+    # PAPAN_IMAGE memungkinkan memakai image yang sudah dibangun (mis. oleh test/docker-smoke.sh).
+    image: ${PAPAN_IMAGE:-papan-informasi:latest}
     restart: unless-stopped
     init: true                 # proses init yang meneruskan sinyal dan memanen proses anak (ffmpeg)
     stop_grace_period: 15s     # server butuh sampai 10 detik untuk menutup dengan bersih
-    env_file: .env
+    env_file: ${PAPAN_ENV_FILE:-.env}
     environment:
       DATA_DIR: /data
       PORT: "3000"
       HOST: ""                 # di dalam container harus mendengarkan semua antarmuka, walau .env mengisi HOST lain
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${PAPAN_PORT:-3000}:3000"
     volumes:
       - papan-data:/data
     healthcheck:
