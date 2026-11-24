@@ -138,6 +138,10 @@ if (!ticketCols.includes('transferred_from')) {
 if (!ticketCols.includes('token')) {
   db.exec('ALTER TABLE tickets ADD COLUMN token TEXT');
 }
+// Iterasi 5: nomor sebelumnya saat antrian dipindahkan ke kategori lain.
+if (!ticketCols.includes('prev_label')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN prev_label TEXT');
+}
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_token ON tickets (token) WHERE token IS NOT NULL');
 
 // Transaksi sederhana (DatabaseSync tidak punya helper transaction).

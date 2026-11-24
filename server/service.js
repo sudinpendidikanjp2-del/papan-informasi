@@ -160,7 +160,8 @@ export function aheadOf(t) {
 export function ticketStatus(token) {
   const t = db
     .prepare(
-      `SELECT t.*, cat.prefix, cat.name AS category_name, sc.name AS counter_name, dc.name AS dedicated_name
+      `SELECT t.*, cat.prefix, cat.name AS category_name, sc.name AS counter_name, dc.name AS dedicated_name,
+              t.prev_label AS prev_label
          FROM tickets t
          JOIN categories cat ON cat.id = t.category_id
          LEFT JOIN counters sc ON sc.id = t.served_by
@@ -188,6 +189,7 @@ export function ticketStatus(token) {
     etaMinutes,
     counter: t.status === 'called' || t.status === 'serving' ? t.counter_name : null,
     dedicatedTo: t.status === 'waiting' ? t.dedicated_name : null,
+    prevLabel: t.status === 'waiting' ? t.prev_label : null,
     calledAt: t.called_at,
     createdAt: t.created_at,
     expired: t.day !== day,
@@ -206,20 +208,61 @@ export function createTicketAtCounter(counterId, b) {
   return createTicket(categoryId, { counterId: b.dedicated ? c.id : null, priority: !!b.priority });
 }
 
-// Pindahkan antrian yang sedang dipegang sebuah meja ke meja lain. Nomor tetap, kembali menunggu.
-export function transfer(counterId, toCounterId) {
-  const target = counterById(Number(toCounterId));
-  if (!target || !target.active) throw new HttpError(404, 'Meja tujuan tidak ditemukan');
-  if (target.id === counterId) throw new HttpError(400, 'Pilih meja lain sebagai tujuan');
+// Pindahkan antrian yang sedang dipegang sebuah meja. b: { toCounterId } atau { toCategoryId, priority? }.
+export function transfer(counterId, b = {}) {
   const cur = currentFor(counterId);
   if (!cur) throw new HttpError(404, 'Tidak ada antrian yang bisa dipindahkan');
+  if (b.toCategoryId) return transferToCategory(counterId, cur, Number(b.toCategoryId), !!b.priority);
+  return transferToCounter(counterId, cur, Number(b.toCounterId));
+}
+
+// Ke meja lain: nomor tetap, kembali menunggu khusus untuk meja tujuan.
+function transferToCounter(counterId, cur, toCounterId) {
+  const target = counterById(toCounterId);
+  if (!target || !target.active) throw new HttpError(404, 'Meja tujuan tidak ditemukan');
+  if (target.id === counterId) throw new HttpError(400, 'Pilih meja lain sebagai tujuan');
   db.prepare(
     `UPDATE tickets SET status = 'waiting', counter_id = ?, served_by = NULL, served_user_id = NULL,
             called_at = NULL, transferred_from = ? WHERE id = ?`
   ).run(target.id, counterId, cur.id);
   touch(cur.categoryId);
   bus.emit('queue');
-  return { label: cur.label, to: target.name };
+  return { label: cur.label, to: target.name, kind: 'counter' };
+}
+
+// Ke kategori lain: tiket menunggu di antrian kategori tujuan (tidak khusus meja). Nomor baru
+// diterbitkan di kategori itu karena nomor unik per kategori per hari. Token tiket tetap, jadi halaman
+// pantau pengunjung otomatis menampilkan nomor baru. Waktu ambil awal dipertahankan agar pengunjung
+// tidak antre ulang dari belakang. Memilih kategori yang sama berarti mengembalikan ke antrian
+// kategori (nomor tetap).
+function transferToCategory(counterId, cur, toCategoryId, priority) {
+  const target = categoryById(toCategoryId);
+  if (!target) throw new HttpError(404, 'Kategori tujuan tidak ditemukan');
+  const t = db.prepare('SELECT * FROM tickets WHERE id = ?').get(cur.id);
+  const sameCategory = target.id === t.category_id;
+  let number = t.number;
+  const prevLabel = sameCategory ? null : cur.label;
+  tx(() => {
+    if (!sameCategory) {
+      number = db
+        .prepare('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM tickets WHERE category_id = ? AND day = ?')
+        .get(target.id, t.day).n;
+    }
+    db.prepare(
+      `UPDATE tickets SET status = 'waiting', category_id = ?, number = ?, counter_id = NULL, served_by = NULL,
+              served_user_id = NULL, called_at = NULL, transferred_from = ?,
+              priority = CASE WHEN ? = 1 THEN 1 ELSE priority END, prev_label = COALESCE(?, prev_label)
+        WHERE id = ?`
+    ).run(target.id, number, counterId, priority ? 1 : 0, prevLabel, cur.id);
+    // Pengunjung yang berlangganan push boleh diberi tahu lagi saat hampir giliran di antrian baru.
+    db.prepare('UPDATE push_subscriptions SET notified_near = 0 WHERE ticket_id = ?').run(cur.id);
+  });
+  touch(t.category_id);
+  touch(target.id);
+  const label = labelOf(target.prefix, number);
+  bus.emit('queue');
+  if (prevLabel) bus.emit('transfer', { ticketId: cur.id, label, prevLabel, categoryName: target.name });
+  return { label, prevLabel, to: target.name, kind: 'category' };
 }
 
 // Riwayat antrian yang dilayani seorang pegawai hari ini.

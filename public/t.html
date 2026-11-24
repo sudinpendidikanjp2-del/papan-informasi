@@ -70,6 +70,8 @@
         <div id="finishBox" class="hidden"></div>
       </section>
 
+      <div class="banner info hidden" id="movedBanner"><span id="movedIc"></span><span id="movedText"></span></div>
+
       <div class="banner hidden" id="nearBanner"><span id="nearIc"></span><span><b>Giliran Anda hampir tiba.</b> Mohon bersiap menuju loket.</span></div>
 
       <section class="card" id="alerts">
@@ -101,6 +103,7 @@
       const baseTitle = document.title;
 
       $('nearIc').innerHTML = P.icon('bell');
+      $('movedIc').innerHTML = P.icon('swap');
       $('missIc').innerHTML = P.icon('ticket');
       $('enable').innerHTML = P.icon('bell') + 'Aktifkan peringatan';
 
@@ -142,6 +145,13 @@
         $('stats').classList.add('hidden');
         $('finishBox').classList.add('hidden');
         $('nearBanner').classList.add('hidden');
+        // Nomor berganti karena petugas memindahkan antrian ke kategori lain.
+        const moved = s.status === 'waiting' && s.prevLabel;
+        $('movedBanner').classList.toggle('hidden', !moved);
+        if (moved) {
+          $('movedText').textContent = 'Nomor Anda dipindahkan dari ' + s.prevLabel + ' ke ' + s.label +
+            ' (' + s.categoryName + '). Gunakan nomor baru ini. Waktu tunggu awal tetap dihitung.';
+        }
 
         if (s.status === 'waiting') {
           pill.className = 'hero-pill' + prio;
@@ -268,7 +278,8 @@
           prev = st;
           st = s;
           render();
-          if (prev && prev.status === 'waiting' && (st.status === 'called' || st.status === 'serving')) alertCalled();
+          if (prev && prev.label !== st.label && st.prevLabel) alertNear(); // nomor berganti (dipindah kategori)
+          else if (prev && prev.status === 'waiting' && (st.status === 'called' || st.status === 'serving')) alertCalled();
           else if (prev && prev.status === 'called' && st.status === 'called' && st.calledAt !== prev.calledAt) alertCalled(); // dipanggil ulang
           else if (prev && prev.status === 'waiting' && st.status === 'waiting' && prev.ahead > st.nearAt && st.ahead <= st.nearAt) alertNear();
           if (st.status === 'done' || st.status === 'skipped') { clearInterval(flashTimer); document.title = baseTitle; }

@@ -43,6 +43,9 @@ export function init() {
   bus.on('call', (c) => {
     onCall(c).catch((e) => console.warn('[papan] push dipanggil gagal:', e.message));
   });
+  bus.on('transfer', (c) => {
+    onTransfer(c).catch((e) => console.warn('[papan] push pindah gagal:', e.message));
+  });
   let timer = null;
   bus.on('queue', () => {
     clearTimeout(timer);
@@ -119,6 +122,25 @@ export async function onCall(c) {
         kind: 'called',
         title: 'Giliran Anda tiba',
         body: 'Nomor ' + c.label + ', silakan menuju ' + (c.counter || 'meja layanan') + '.',
+        tag: 'ticket-' + c.ticketId,
+        url: '/t.html?k=' + r.token,
+      })
+    )
+  );
+}
+
+// Tiket dipindah ke kategori lain: nomornya berganti, jadi pengunjung perlu tahu nomor barunya.
+export async function onTransfer(c) {
+  if (!enabled() || !c || !c.ticketId) return;
+  const rows = db
+    .prepare('SELECT s.*, t.token FROM push_subscriptions s JOIN tickets t ON t.id = s.ticket_id WHERE s.ticket_id = ?')
+    .all(c.ticketId);
+  await Promise.allSettled(
+    rows.map((r) =>
+      deliver(r, {
+        kind: 'moved',
+        title: 'Nomor antrian Anda dipindahkan',
+        body: 'Nomor baru Anda ' + c.label + ' (' + c.categoryName + '), sebelumnya ' + c.prevLabel + '. Waktu tunggu awal tetap dihitung.',
         tag: 'ticket-' + c.ticketId,
         url: '/t.html?k=' + r.token,
       })

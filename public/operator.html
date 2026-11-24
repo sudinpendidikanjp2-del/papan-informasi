@@ -113,12 +113,29 @@
         </div>
 
         <div class="card hidden" id="xferCard">
-          <div class="card-title">Pindahkan antrian ke meja lain</div>
-          <div class="xfer">
-            <select id="xferTo" aria-label="Meja tujuan"></select>
-            <button class="btn btn-ghost" id="xferBtn"></button>
+          <div class="card-title">Pindahkan antrian</div>
+          <div class="tabs-u" id="xferMode" role="tablist" style="margin-bottom:14px">
+            <button role="tab" class="on" data-m="counter" aria-selected="true">Ke meja lain</button>
+            <button role="tab" data-m="category" aria-selected="false">Ke kategori lain</button>
           </div>
-          <p class="hint" style="margin:8px 0 0">Nomor tetap sama dan kembali menunggu khusus untuk meja tujuan.</p>
+          <div id="xferCounter">
+            <div class="xfer">
+              <select id="xferTo" aria-label="Meja tujuan"></select>
+              <button class="btn btn-ghost" id="xferBtn"></button>
+            </div>
+            <p class="hint" style="margin:8px 0 0">Nomor tetap sama dan kembali menunggu khusus untuk meja tujuan.</p>
+          </div>
+          <div id="xferCategory" class="hidden">
+            <div class="xfer">
+              <select id="xferCat" aria-label="Kategori tujuan"></select>
+              <button class="btn btn-ghost" id="xferCatBtn"></button>
+            </div>
+            <label class="switch" style="margin-top:6px">
+              <span><div class="t">Dahulukan</div><div class="d">Beri prioritas di kategori tujuan</div></span>
+              <input type="checkbox" id="xferPrio"><span class="track"></span>
+            </label>
+            <p class="hint" style="margin:6px 0 0" id="xferCatHint"></p>
+          </div>
         </div>
         <p class="hint" id="hint"></p>
       </section>
@@ -190,6 +207,7 @@
       $('done').innerHTML = P.icon('check') + 'Selesai';
       $('skip').innerHTML = P.icon('x') + 'Lewati';
       $('xferBtn').innerHTML = P.icon('swap') + 'Pindahkan';
+      $('xferCatBtn').innerHTML = P.icon('swap') + 'Pindahkan';
       $('newBtn').innerHTML = P.icon('ticket') + 'Buat nomor';
       $('nav-panel').innerHTML = P.icon('monitor') + 'Panel';
       $('nav-new').innerHTML = P.icon('ticket') + 'Buat nomor';
@@ -350,6 +368,16 @@
         $('xferTo').innerHTML = others.map((c) => '<option value="' + c.id + '">' + P.esc(c.name) + (c.current ? ' (sibuk)' : ' (kosong)') + '</option>').join('');
         if (keep && others.some((c) => String(c.id) === keep)) $('xferTo').value = keep;
 
+        // Pindah ke kategori: kategori yang sama berarti "kembalikan ke antrian" (nomor tetap).
+        const keepCat = $('xferCat').value;
+        $('xferCat').innerHTML = state.categories.map((k) =>
+          '<option value="' + k.id + '">' + P.esc(k.name) + ' (' + P.esc(k.prefix) + ')' +
+          (cur && k.id === cur.categoryId ? ' - kembalikan ke antrian' : ' - ' + k.waiting + ' menunggu') + '</option>').join('');
+        const fallback = state.categories.find((k) => !cur || k.id !== cur.categoryId);
+        $('xferCat').value = keepCat && state.categories.some((k) => String(k.id) === keepCat) ? keepCat : (fallback ? String(fallback.id) : '');
+        updateXferHint();
+        $('xferCard').classList.toggle('hidden', !cur || (!others.length && state.categories.length < 1));
+
         // Form buat nomor
         const selected = $('newCat').value;
         $('newCat').innerHTML = state.categories.map((k) => '<option value="' + k.id + '">' + P.esc(k.name) + ' (' + P.esc(k.prefix) + ')</option>').join('');
@@ -374,6 +402,42 @@
       $('xferBtn').addEventListener('click', async () => {
         const r = await act('transfer', { toCounterId: Number($('xferTo').value) });
         if (r) P.toast('Nomor ' + r.label + ' dipindahkan ke ' + r.to);
+      });
+
+      // Mode pindah: ke meja atau ke kategori
+      function setXferMode(m) {
+        document.querySelectorAll('#xferMode button').forEach((b) => {
+          b.classList.toggle('on', b.dataset.m === m);
+          b.setAttribute('aria-selected', String(b.dataset.m === m));
+        });
+        $('xferCounter').classList.toggle('hidden', m !== 'counter');
+        $('xferCategory').classList.toggle('hidden', m !== 'category');
+      }
+      $('xferMode').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-m]');
+        if (b) setXferMode(b.dataset.m);
+      });
+
+      function updateXferHint() {
+        const me = myCounter();
+        const cur = me && me.current;
+        const target = state && state.categories.find((k) => String(k.id) === $('xferCat').value);
+        if (!cur || !target) { $('xferCatHint').textContent = ''; return; }
+        $('xferCatHint').textContent = target.id === cur.categoryId
+          ? 'Nomor tetap ' + cur.label + ' dan kembali ke antrian kategori ini (tidak lagi khusus satu meja).'
+          : 'Nomor baru diterbitkan di kategori ' + target.name + ' (awalan ' + target.prefix + '), dan pengunjung diberi tahu lewat halaman pantau. Waktu tunggu awal tetap dihitung, sehingga dilayani sesuai waktu kedatangan.';
+      }
+      $('xferCat').addEventListener('change', updateXferHint);
+
+      $('xferCatBtn').addEventListener('click', async () => {
+        const me = myCounter();
+        const cur = me && me.current;
+        const r = await act('transfer', { toCategoryId: Number($('xferCat').value), priority: $('xferPrio').checked });
+        if (!r) return;
+        $('xferPrio').checked = false;
+        P.toast(r.prevLabel
+          ? 'Nomor ' + r.prevLabel + ' dipindahkan: kini ' + r.label + ' di ' + r.to
+          : 'Nomor ' + (cur ? cur.label : r.label) + ' dikembalikan ke antrian ' + r.to);
       });
 
       // ----- Buat nomor -----

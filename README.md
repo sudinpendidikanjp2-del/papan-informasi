@@ -83,7 +83,13 @@ Nomor prioritas (lansia, ibu hamil, penyandang disabilitas) dilayani lebih dulu 
 
 ### Pindah antrian
 
-Saat memegang sebuah nomor, pegawai dapat memindahkannya ke meja lain. Nomor tetap sama, kembali menunggu khusus untuk meja tujuan, dan dipanggil lebih dulu oleh meja itu. Riwayat pegawai asal tidak menghitungnya.
+Saat memegang sebuah nomor, pegawai dapat memindahkannya dengan dua cara (kartu *Pindahkan antrian* di panel meja):
+
+- **Ke meja lain**: nomor tetap sama dan kembali menunggu khusus untuk meja tujuan, yang memanggilnya lebih dulu.
+- **Ke kategori lain**: tiket menunggu di antrian kategori tujuan (tidak khusus satu meja) dan dipanggil oleh meja mana pun di kategori itu. Karena nomor unik per kategori per hari, tiket mendapat **nomor baru** di kategori tujuan (mis. `A-001` menjadi `B-004`). Token dan halaman pantau pengunjung tetap sama, jadi ponsel pengunjung langsung menampilkan nomor barunya beserta banner penjelasan, bergetar, dan (bila berlangganan push) menerima notifikasi "nomor dipindahkan". Waktu ambil awal dipertahankan, sehingga tiket dilayani sesuai waktu kedatangan dan tidak antre ulang dari belakang. Opsi *Dahulukan* memberinya prioritas di kategori tujuan.
+- Memilih **kategori yang sama** berarti mengembalikan tiket ke antrian kategorinya: nomor tetap, tidak lagi khusus satu meja, dan tidak ada push.
+
+Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di laporan per kategori, tiket dihitung pada kategori tempat ia berakhir.
 
 ## Konten & screensaver
 
@@ -146,7 +152,7 @@ scripts/
 ## Batasan saat ini
 
 - Pembatas login disimpan di memori, jadi reset saat server dimulai ulang.
-- Pindah antrian hanya ke meja lain, bukan ke kategori lain.
+- Nomor lama tidak bisa dipakai setelah antrian dipindah ke kategori lain; pengunjung yang tidak membuka halaman pantau dan tidak berlangganan push hanya tahu nomor barunya dari papan atau petugas.
 - Papan memakai `import()` dinamis untuk pdf.js, sehingga membutuhkan browser yang cukup baru (Chrome 63 atau setara). Build pdf.js yang dipakai adalah versi *legacy* untuk kompatibilitas lebih luas.
 - Suara bel dan TTS butuh satu kali ketukan "Aktifkan" di layar setelah halaman dibuka (aturan autoplay browser). Kualitas suara TTS bergantung pada suara bahasa Indonesia yang terpasang di perangkat.
 - Notifikasi ke ponsel pengunjung memakai halaman pantau dan push browser; belum ada SMS atau WhatsApp.

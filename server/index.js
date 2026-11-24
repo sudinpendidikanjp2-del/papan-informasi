@@ -200,7 +200,7 @@ async function api(req, res, url) {
     auth.assertCounterAccess(session, id);
     const action = counterAction[2];
     if (action === 'ticket') return send(res, 201, svc.createTicketAtCounter(id, await readJson(req)));
-    if (action === 'transfer') return send(res, 200, svc.transfer(id, (await readJson(req)).toCounterId));
+    if (action === 'transfer') return send(res, 200, svc.transfer(id, await readJson(req)));
     const actions = {
       next: () => svc.callNext(id, session.userId),
       recall: () => svc.recall(id),
