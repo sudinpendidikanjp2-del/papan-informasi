@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Papan Informasi</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: var(--bg); }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    .tabs button { background: #fff; color: var(--blue); border: 1px solid var(--line); }
+    .tabs button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .tbl-wrap { overflow-x: auto; }
+    .thumb { width: 72px; height: 44px; object-fit: cover; border-radius: 8px; background: var(--blue-soft); }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .check input { width: auto; }
+    .section { display: none; }
+    .section.on { display: block; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Admin Papan Informasi</h1>
+    <div class="row">
+      <a href="/" style="color:#fff;text-decoration:none;font-weight:600">Buka papan</a>
+      <a href="/operator.html" style="color:#fff;text-decoration:none;font-weight:600">Panel meja</a>
+      <button class="btn btn-accent" id="logout">Ganti token</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <nav class="tabs">
+      <button class="btn on" data-tab="content">Konten</button>
+      <button class="btn" data-tab="queue">Kategori & meja</button>
+      <button class="btn" data-tab="settings">Pengaturan</button>
+      <button class="btn" data-tab="report">Laporan hari ini</button>
+    </nav>
+
+    <!-- KONTEN -->
+    <section class="section on" id="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <h2 style="margin:0 0 12px;font-size:18px">Daftar konten</h2>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Jenis</th><th>Judul</th><th>Durasi</th><th>Status</th><th></th></tr></thead>
+              <tbody id="contentRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <form class="card" id="contentForm">
+          <h2 style="margin:0 0 12px;font-size:18px" id="contentFormTitle">Tambah konten</h2>
+          <input type="hidden" name="id">
+          <div class="field"><label>Jenis</label>
+            <select name="type" id="ctype">
+              <option value="text">Teks</option>
+              <option value="image">Gambar</option>
+              <option value="video">Video</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+          <div class="field"><label>Judul</label><input name="title" maxlength="200"></div>
+          <div class="field" id="bodyField"><label>Isi teks</label><textarea name="body" rows="4" maxlength="5000"></textarea></div>
+          <div class="field" id="fileField" class="hidden">
+            <label>File (JPG, PNG, GIF, WEBP, SVG, MP4, WEBM, PDF — maks 300 MB)</label>
+            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,.mp4,.webm,.pdf">
+            <input type="hidden" name="file">
+            <span class="muted" id="fileName" style="font-size:13px"></span>
+          </div>
+          <div class="field"><label>Durasi tampil (detik). Untuk video, 0 = sampai video selesai</label>
+            <input name="duration" type="number" min="0" max="3600" value="15">
+          </div>
+          <div class="field"><label>Urutan (kecil tampil dulu)</label>
+            <input name="sort" type="number" value="0">
+          </div>
+          <label class="check"><input type="checkbox" name="active" checked> Aktif</label>
+          <label class="check"><input type="checkbox" name="screensaver"> Tampilkan juga sebagai screensaver (gambar/video)</label>
+          <div class="row" style="margin-top:14px">
+            <button class="btn" type="submit">Simpan</button>
+            <button class="btn btn-ghost" type="button" id="contentReset">Kosongkan</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- KATEGORI & MEJA -->
+    <section class="section" id="tab-queue">
+      <div class="grid-2">
+        <div class="card">
+          <h2 style="margin:0 0 12px;font-size:18px">Kategori layanan</h2>
+          <div class="tbl-wrap"><table><thead><tr><th>Prefix</th><th>Nama</th><th></th></tr></thead><tbody id="catRows"></tbody></table></div>
+          <form id="catForm" class="row" style="margin-top:12px;align-items:flex-end">
+            <input type="hidden" name="id">
+            <div style="width:90px"><label class="muted" style="font-size:13px">Prefix</label><input name="prefix" maxlength="3" required></div>
+            <div style="flex:1;min-width:160px"><label class="muted" style="font-size:13px">Nama</label><input name="name" maxlength="80" required></div>
+            <button class="btn" type="submit">Simpan</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 style="margin:0 0 12px;font-size:18px">Meja & pemetaan kategori</h2>
+          <div class="tbl-wrap"><table><thead><tr><th>Meja</th><th>Kategori</th><th>Aktif</th><th></th></tr></thead><tbody id="ctrRows"></tbody></table></div>
+          <form id="ctrForm" class="row" style="margin-top:12px;align-items:flex-end">
+            <input type="hidden" name="id">
+            <div style="flex:1;min-width:140px"><label class="muted" style="font-size:13px">Nama meja</label><input name="name" maxlength="80" required></div>
+            <div style="flex:1;min-width:160px"><label class="muted" style="font-size:13px">Kategori</label><select name="categoryId" id="ctrCat"></select></div>
+            <button class="btn" type="submit">Simpan</button>
+          </form>
+          <p class="muted" style="font-size:13px">Meja dengan kategori dipanggil untuk antrian kategori tersebut ketika kosong. Antrian khusus meja tidak diatur di sini.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PENGATURAN -->
+    <section class="section" id="tab-settings">
+      <form class="card" id="settingsForm" style="max-width:640px">
+        <div class="field"><label>Nama instansi</label><input name="org_name" maxlength="120"></div>
+        <div class="field"><label>Logo instansi (PNG/SVG transparan)</label>
+          <div class="row"><img id="logoPreview" class="thumb" alt="" style="width:72px;height:72px;object-fit:contain"><input type="file" id="logoInput" accept=".png,.jpg,.jpeg,.svg,.webp"></div>
+          <input type="hidden" name="org_logo">
+        </div>
+        <div class="field"><label>Idle sebelum screensaver (menit)</label><input name="idle_minutes" type="number" min="1" max="120"></div>
+        <div class="field"><label>Zona waktu</label>
+          <select name="timezone">
+            <option value="Asia/Jakarta">WIB — Asia/Jakarta</option>
+            <option value="Asia/Makassar">WITA — Asia/Makassar</option>
+            <option value="Asia/Jayapura">WIT — Asia/Jayapura</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" name="sound_enabled"> Bunyi bel saat memanggil</label>
+        <label class="check"><input type="checkbox" name="tts_enabled"> Suara pemanggilan (Bahasa Indonesia)</label>
+        <div class="row" style="margin-top:14px"><button class="btn" type="submit">Simpan pengaturan</button></div>
+      </form>
+    </section>
+
+    <!-- LAPORAN -->
+    <section class="section" id="tab-report">
+      <div class="card" style="max-width:800px">
+        <div class="tbl-wrap"><table><thead><tr><th>Kategori</th><th>Total</th><th>Selesai</th><th>Dilewati</th><th>Menunggu</th></tr></thead><tbody id="reportRows"></tbody></table></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      const P = window.Papan;
+      const $ = (id) => document.getElementById(id);
+      const q = (s, root = document) => root.querySelector(s);
+      const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'PDF' };
+      let contents = [];
+      let categories = [];
+
+      function ensureToken() {
+        if (!P.store.get(P.TOKEN_KEY)) {
+          const t = prompt('Masukkan token admin (ADMIN_TOKEN):') || '';
+          if (t) P.store.set(P.TOKEN_KEY, t);
+        }
+      }
+
+      async function call(path, opts = {}) {
+        try {
+          return await P.api(path, { auth: true, ...opts });
+        } catch (e) {
+          if (e.status === 401) {
+            P.store.del(P.TOKEN_KEY);
+            P.toast('Token tidak valid. Muat ulang halaman dan masukkan token.');
+          } else {
+            P.toast(e.message);
+          }
+          throw e;
+        }
+      }
+
+      // Tab
+      document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+        document.querySelectorAll('.section').forEach((s) => s.classList.toggle('on', s.id === 'tab-' + b.dataset.tab));
+        if (b.dataset.tab === 'report') loadReport();
+      }));
+
+      // ----- Konten -----
+      async function loadContents() {
+        contents = await call('/api/admin/content');
+        $('contentRows').innerHTML = contents.map((c) => {
+          const label = c.type === 'text' ? P.esc(c.title || '(tanpa judul)') : P.esc(c.title || c.file);
+          return '<tr>' +
+            '<td>' + TYPE_LABEL[c.type] + (c.screensaver ? ' <span class="tag">Screensaver</span>' : '') + '</td>' +
+            '<td>' + label + '</td>' +
+            '<td>' + (c.type === 'video' && c.duration === 0 ? 'Sampai selesai' : c.duration + ' dtk') + '</td>' +
+            '<td>' + (c.active ? 'Aktif' : '<span class="muted">Nonaktif</span>') + '</td>' +
+            '<td class="row"><button class="btn btn-ghost" data-edit="' + c.id + '">Ubah</button>' +
+            '<button class="btn btn-danger" data-del="' + c.id + '">Hapus</button></td></tr>';
+        }).join('') || '<tr><td colspan="5" class="muted">Belum ada konten</td></tr>';
+      }
+
+      function setType() {
+        const t = $('ctype').value;
+        $('bodyField').classList.toggle('hidden', t !== 'text');
+        $('fileField').classList.toggle('hidden', t === 'text');
+      }
+      $('ctype').addEventListener('change', setType);
+
+      function fillForm(c) {
+        const f = $('contentForm');
+        f.id.value = c ? c.id : '';
+        f.type.value = c ? c.type : 'text';
+        f.title.value = c ? c.title : '';
+        f.body.value = c ? c.body : '';
+        f.file.value = c ? c.file : '';
+        f.duration.value = c ? c.duration : 15;
+        f.sort.value = c ? c.sort : 0;
+        f.active.checked = c ? !!c.active : true;
+        f.screensaver.checked = c ? !!c.screensaver : false;
+        $('fileName').textContent = c && c.file ? 'File saat ini: ' + c.file : '';
+        $('contentFormTitle').textContent = c ? 'Ubah konten' : 'Tambah konten';
+        setType();
+      }
+
+      $('contentReset').addEventListener('click', () => fillForm(null));
+
+      $('contentRows').addEventListener('click', async (e) => {
+        const ed = e.target.dataset.edit;
+        const del = e.target.dataset.del;
+        if (ed) fillForm(contents.find((c) => String(c.id) === ed));
+        if (del && confirm('Hapus konten ini?')) {
+          await call('/api/admin/content/' + del, { method: 'DELETE' });
+          P.toast('Konten dihapus');
+          loadContents();
+        }
+      });
+
+      $('fileInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const r = await call('/api/admin/upload', {
+            method: 'POST',
+            headers: { 'x-filename': encodeURIComponent(file.name) },
+            body: file,
+          });
+          $('contentForm').file.value = r.file;
+          $('fileName').textContent = 'Terunggah: ' + file.name;
+          P.toast('File terunggah');
+        } catch { /* sudah ditangani */ }
+      });
+
+      $('contentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const body = {
+          type: f.type.value,
+          title: f.title.value,
+          body: f.body.value,
+          file: f.file.value,
+          duration: Number(f.duration.value),
+          sort: Number(f.sort.value),
+          active: f.active.checked,
+          screensaver: f.screensaver.checked,
+        };
+        try {
+          if (f.id.value) await call('/api/admin/content/' + f.id.value, { method: 'PUT', body });
+          else await call('/api/admin/content', { method: 'POST', body });
+          P.toast('Konten disimpan');
+          fillForm(null);
+          loadContents();
+        } catch { /* ditangani */ }
+      });
+
+      // ----- Kategori & meja -----
+      async function loadQueue() {
+        categories = await call('/api/admin/categories');
+        const counters = await call('/api/admin/counters');
+        $('catRows').innerHTML = categories.map((k) =>
+          '<tr><td><span class="tag">' + P.esc(k.prefix) + '</span></td><td>' + P.esc(k.name) + '</td>' +
+          '<td class="row"><button class="btn btn-ghost" data-ckedit="' + k.id + '">Ubah</button>' +
+          '<button class="btn btn-danger" data-ckdel="' + k.id + '">Hapus</button></td></tr>').join('') ||
+          '<tr><td colspan="3" class="muted">Belum ada kategori</td></tr>';
+        $('ctrCat').innerHTML = '<option value="">— tanpa kategori —</option>' +
+          categories.map((k) => '<option value="' + k.id + '">' + P.esc(k.name) + ' (' + P.esc(k.prefix) + ')</option>').join('');
+        $('ctrRows').innerHTML = counters.map((c) =>
+          '<tr><td>' + P.esc(c.name) + '</td><td>' + P.esc(c.categoryName || '—') + '</td>' +
+          '<td>' + (c.active ? 'Ya' : 'Tidak') + '</td>' +
+          '<td class="row"><button class="btn btn-ghost" data-ctedit="' + c.id + '">Ubah</button>' +
+          '<button class="btn btn-danger" data-ctdel="' + c.id + '">Hapus</button></td></tr>').join('') ||
+          '<tr><td colspan="4" class="muted">Belum ada meja</td></tr>';
+        window.__counters = counters;
+      }
+
+      $('catForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const body = { name: f.name.value, prefix: f.prefix.value };
+        try {
+          if (f.id.value) await call('/api/admin/categories/' + f.id.value, { method: 'PUT', body });
+          else await call('/api/admin/categories', { method: 'POST', body });
+          f.reset(); f.id.value = '';
+          P.toast('Kategori disimpan');
+          loadQueue();
+        } catch { /* ditangani */ }
+      });
+
+      $('ctrForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const body = { name: f.name.value, categoryId: f.categoryId.value || null, active: true };
+        try {
+          if (f.id.value) await call('/api/admin/counters/' + f.id.value, { method: 'PUT', body });
+          else await call('/api/admin/counters', { method: 'POST', body });
+          f.reset(); f.id.value = '';
+          P.toast('Meja disimpan');
+          loadQueue();
+        } catch { /* ditangani */ }
+      });
+
+      $('catRows').addEventListener('click', async (e) => {
+        const ed = e.target.dataset.ckedit;
+        const del = e.target.dataset.ckdel;
+        if (ed) {
+          const k = categories.find((x) => String(x.id) === ed);
+          $('catForm').id.value = k.id; $('catForm').name.value = k.name; $('catForm').prefix.value = k.prefix;
+        }
+        if (del && confirm('Hapus kategori? Antrian terkait ikut terhapus.')) {
+          await call('/api/admin/categories/' + del, { method: 'DELETE' });
+          loadQueue();
+        }
+      });
+
+      $('ctrRows').addEventListener('click', async (e) => {
+        const ed = e.target.dataset.ctedit;
+        const del = e.target.dataset.ctdel;
+        if (ed) {
+          const c = window.__counters.find((x) => String(x.id) === ed);
+          $('ctrForm').id.value = c.id; $('ctrForm').name.value = c.name; $('ctrForm').categoryId.value = c.category_id || '';
+        }
+        if (del && confirm('Hapus meja ini?')) {
+          await call('/api/admin/counters/' + del, { method: 'DELETE' });
+          loadQueue();
+        }
+      });
+
+      // ----- Pengaturan -----
+      async function loadSettings() {
+        const s = await P.api('/api/settings');
+        const f = $('settingsForm');
+        f.org_name.value = s.org_name || '';
+        f.org_logo.value = s.org_logo || '';
+        f.idle_minutes.value = s.idle_minutes || '3';
+        f.timezone.value = s.timezone || 'Asia/Jakarta';
+        f.sound_enabled.checked = s.sound_enabled !== '0';
+        f.tts_enabled.checked = s.tts_enabled !== '0';
+        $('logoPreview').src = s.org_logo || '';
+        $('logoPreview').style.visibility = s.org_logo ? 'visible' : 'hidden';
+      }
+
+      $('logoInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const r = await call('/api/admin/upload', { method: 'POST', headers: { 'x-filename': encodeURIComponent(file.name) }, body: file });
+          $('settingsForm').org_logo.value = r.url;
+          $('logoPreview').src = r.url;
+          $('logoPreview').style.visibility = 'visible';
+        } catch { /* ditangani */ }
+      });
+
+      $('settingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          await call('/api/admin/settings', {
+            method: 'PUT',
+            body: {
+              org_name: f.org_name.value,
+              org_logo: f.org_logo.value,
+              idle_minutes: f.idle_minutes.value,
+              timezone: f.timezone.value,
+              sound_enabled: f.sound_enabled.checked ? '1' : '0',
+              tts_enabled: f.tts_enabled.checked ? '1' : '0',
+            },
+          });
+          P.toast('Pengaturan disimpan');
+        } catch { /* ditangani */ }
+      });
+
+      // ----- Laporan -----
+      async function loadReport() {
+        const rows = await call('/api/admin/report');
+        $('reportRows').innerHTML = rows.map((r) =>
+          '<tr><td>' + P.esc(r.name) + ' <span class="tag">' + P.esc(r.prefix) + '</span></td>' +
+          '<td>' + (r.total || 0) + '</td><td>' + (r.done || 0) + '</td><td>' + (r.skipped || 0) + '</td><td>' + (r.waiting || 0) + '</td></tr>'
+        ).join('') || '<tr><td colspan="5" class="muted">Belum ada data</td></tr>';
+      }
+
+      $('logout').addEventListener('click', () => { P.store.del(P.TOKEN_KEY); ensureToken(); });
+
+      ensureToken();
+      setType();
+      loadContents().catch(() => {});
+      loadQueue().catch(() => {});
+      loadSettings().catch(() => {});
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel Meja Layanan</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: var(--bg); }
+    .now { text-align: center; padding: 22px 12px; }
+    .now .label { font-size: clamp(56px, 16vw, 112px); font-weight: 800; color: var(--blue); line-height: 1; font-variant-numeric: tabular-nums; }
+    .now .status { color: var(--muted); font-weight: 600; margin-top: 8px; }
+    .btns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .btns .btn { padding: 18px; font-size: 17px; }
+    .btns .wide { grid-column: 1 / -1; }
+    .stats { display: flex; justify-content: space-around; text-align: center; gap: 8px; }
+    .stats b { display: block; font-size: 28px; color: var(--blue); font-variant-numeric: tabular-nums; }
+    .stats span { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">Panel Meja Layanan</h1>
+    <div class="row">
+      <select id="counter" style="width:auto;min-width:160px"></select>
+      <button class="btn btn-ghost" id="logout" style="background:#fff">Ganti token</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="card">
+      <div class="now">
+        <div class="label" id="cur">---</div>
+        <div class="status" id="curStatus">Tidak ada antrian yang dilayani</div>
+      </div>
+      <div class="btns">
+        <button class="btn btn-accent wide" id="next">Panggil berikutnya</button>
+        <button class="btn" id="recall">Panggil ulang</button>
+        <button class="btn btn-ghost" id="start">Mulai layani</button>
+        <button class="btn" id="done">Selesai</button>
+        <button class="btn btn-danger" id="skip">Lewati</button>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="stats">
+        <div><b id="waiting">0</b><span>Menunggu di kategori</span></div>
+        <div><b id="served">0</b><span>Meja lain melayani</span></div>
+      </div>
+    </section>
+    <p class="muted" style="font-size:13px;margin-top:12px" id="hint"></p>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      const P = window.Papan;
+      const $ = (id) => document.getElementById(id);
+      let state = null;
+      let counterId = null;
+
+      function ensureToken() {
+        let t = P.store.get(P.TOKEN_KEY);
+        if (!t) {
+          t = prompt('Masukkan token petugas (ADMIN_TOKEN):') || '';
+          if (t) P.store.set(P.TOKEN_KEY, t);
+        }
+        return t;
+      }
+
+      async function loadState() {
+        state = await P.api('/api/state');
+        const sel = $('counter');
+        const prev = counterId || P.store.get('papan_counter');
+        sel.innerHTML = state.counters.map((c) =>
+          '<option value="' + c.id + '">' + P.esc(c.name) + (c.categoryName ? ' · ' + P.esc(c.categoryName) : '') + '</option>').join('');
+        if (prev && state.counters.some((c) => String(c.id) === String(prev))) sel.value = prev;
+        counterId = Number(sel.value) || null;
+        if (counterId) P.store.set('papan_counter', counterId);
+        render();
+      }
+
+      function render() {
+        if (!state || !counterId) return;
+        const me = state.counters.find((c) => c.id === counterId);
+        const cur = me && me.current;
+        $('cur').textContent = cur ? cur.label : '---';
+        const statusText = cur
+          ? (cur.status === 'serving' ? 'Sedang dilayani' : 'Dipanggil, menunggu pengunjung')
+          : 'Tidak ada antrian yang dilayani';
+        $('curStatus').textContent = statusText;
+        $('next').disabled = !!cur;
+        $('recall').disabled = !cur;
+        $('start').disabled = !cur || cur.status !== 'called';
+        $('done').disabled = !cur;
+        $('skip').disabled = !cur;
+
+        const cat = me && state.categories.find((k) => k.id === me.categoryId);
+        $('waiting').textContent = cat ? cat.waiting : 0;
+        const busyOthers = state.counters.filter((c) => c.id !== counterId && c.current).length;
+        $('served').textContent = busyOthers;
+        $('title').textContent = me ? me.name : 'Panel Meja Layanan';
+        $('hint').textContent = me && me.categoryName
+          ? 'Melayani kategori: ' + me.categoryName + '. Antrian kategori ini dipanggil oleh meja yang sedang kosong.'
+          : 'Meja ini belum dipetakan ke kategori. Hubungi admin untuk pemetaan.';
+      }
+
+      async function act(action) {
+        if (!counterId) return;
+        try {
+          await P.api('/api/counter/' + counterId + '/' + action, { method: 'POST', auth: true, body: {} });
+          await loadState();
+        } catch (e) {
+          if (e.status === 401) {
+            P.store.del(P.TOKEN_KEY);
+            P.toast('Token tidak valid. Masukkan ulang.');
+          } else {
+            P.toast(e.message);
+          }
+        }
+      }
+
+      $('counter').addEventListener('change', (e) => {
+        counterId = Number(e.target.value);
+        P.store.set('papan_counter', counterId);
+        render();
+      });
+      $('next').addEventListener('click', () => act('next'));
+      $('recall').addEventListener('click', () => act('recall'));
+      $('start').addEventListener('click', () => act('start'));
+      $('done').addEventListener('click', () => act('done'));
+      $('skip').addEventListener('click', () => act('skip'));
+      $('logout').addEventListener('click', () => {
+        P.store.del(P.TOKEN_KEY);
+        ensureToken();
+      });
+
+      ensureToken();
+      loadState().catch((e) => P.toast(e.message));
+      P.connectWS((msg) => {
+        if (msg.type === 'queue' || msg.type === 'categories') loadState().catch(() => {});
+      });
+      setInterval(() => loadState().catch(() => {}), 15000);
+    })();
+  </script>
+</body>
+</html>
