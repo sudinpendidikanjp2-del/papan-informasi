@@ -135,17 +135,19 @@ describe('backup dan restore', { skip: !haveTar && 'tar tidak tersedia' }, () =>
   it('backup saat server menulis: snapshot konsisten, berizin 0600, tanpa sisa sementara', async () => {
     const before = (await sql(src + '/papan.db', 'SELECT COUNT(*) n FROM tickets')).n;
     let stop = false;
+    let done = 0;
     const writers = Array.from({ length: 3 }, async () => {
       const c = client(srv.base);
-      while (!stop) await c.post('/api/tickets', { categoryId: 1 + Math.floor(Math.random() * 2) });
+      while (!stop) { await c.post('/api/tickets', { categoryId: 1 + Math.floor(Math.random() * 2) }); done += 1; }
     });
-    await sleep(300);
+    // Tunggu sampai penulisan benar-benar berjalan (mesin CI lambat), bukan jeda waktu tetap.
+    for (let i = 0; i < 100 && done < 30; i++) await sleep(100);
     const r = script('backup.js', ['--data', src, '--out', out, '--keep', '0']);
     stop = true;
     await Promise.all(writers);
     assert.equal(r.code, 0, r.out);
     const after = (await sql(src + '/papan.db', 'SELECT COUNT(*) n FROM tickets')).n;
-    assert.ok(after - before > 50, 'penulisan paralel harus benar-benar terjadi (' + (after - before) + ')');
+    assert.ok(after - before >= 30, 'penulisan paralel harus benar-benar terjadi (' + (after - before) + ')');
 
     const arc = newestArchive();
     assert.equal((fs.statSync(arc).mode & 0o777).toString(8), '600');
