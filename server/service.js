@@ -479,12 +479,23 @@ export function snapshot(slug = null) {
 // ---------- Konten ----------
 
 const CONTENT_TYPES = ['text', 'image', 'video', 'pdf'];
+const CONTENT_EXT = {
+  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
+  video: ['mp4', 'webm'],
+  pdf: ['pdf'],
+};
 
 function normalizeContent(b) {
   const type = CONTENT_TYPES.includes(b.type) ? b.type : null;
   if (!type) throw new HttpError(400, 'Jenis konten tidak valid');
   const duration = Math.max(0, Math.min(3600, parseInt(b.duration ?? 15, 10) || 0));
   if (type !== 'text' && !b.file) throw new HttpError(400, 'File wajib diunggah untuk jenis ini');
+  if (type !== 'text') {
+    // Nama berkas hanya boleh hasil unggahan (nama acak) dengan ekstensi yang cocok dengan jenis konten.
+    const m = /^[a-f0-9]{20}\.([a-z0-9]{2,4})$/.exec(String(b.file));
+    const allowed = CONTENT_EXT[type];
+    if (!m || !allowed.includes(m[1])) throw new HttpError(400, 'Berkas tidak valid untuk jenis konten ini');
+  }
   return {
     type,
     title: String(b.title || '').slice(0, 200),
@@ -596,8 +607,10 @@ export function listAdminCategories() {
 
 export function saveCategory(id, b) {
   const name = String(b.name || '').trim();
-  const prefix = String(b.prefix || '').trim().toUpperCase().slice(0, 3);
+  const prefix = String(b.prefix || '').trim().toUpperCase();
   if (!name || !prefix) throw new HttpError(400, 'Nama dan prefix wajib diisi');
+  // Prefix tampil di papan, slip, suara, dan notifikasi, jadi dibatasi ke huruf dan angka.
+  if (!/^[A-Z0-9]{1,3}$/.test(prefix)) throw new HttpError(400, 'Prefix harus 1-3 huruf atau angka');
   try {
     if (id) {
       db.prepare('UPDATE categories SET name = ?, prefix = ?, sort = ? WHERE id = ?').run(name, prefix, parseInt(b.sort ?? 0, 10) || 0, id);
@@ -676,6 +689,17 @@ function saveSettingsRows(b) {
       v = String(Number.isFinite(n) ? Math.max(1, Math.min(120, n)) : 3);
     }
     if (k === 'org_name') v = v.slice(0, 120);
+    if (k === 'org_logo' && v && !/^\/uploads\/[a-f0-9]{20}\.(png|jpe?g|gif|webp|svg)$/i.test(v)) {
+      throw new HttpError(400, 'Logo harus berupa berkas yang diunggah lewat halaman ini');
+    }
+    if (k === 'timezone') {
+      // Zona waktu tidak valid membuat setiap panggilan API gagal (today() memakainya), jadi tolak di sini.
+      try {
+        new Intl.DateTimeFormat('en-CA', { timeZone: v });
+      } catch {
+        throw new HttpError(400, 'Zona waktu tidak dikenal');
+      }
+    }
     if (k === 'notify_ahead') {
       const n = parseInt(v, 10);
       v = String(Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 3);

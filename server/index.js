@@ -11,6 +11,9 @@ import { HttpError, bus } from './service.js';
 import * as auth from './auth.js';
 import * as media from './media.js';
 import * as notify from './notify.js';
+import { hit } from './ratelimit.js';
+import { checkUpload } from './upload-check.js';
+import { audit } from './audit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -54,21 +57,31 @@ function send(res, code, obj) {
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let data = '';
+    // Badan JSON kecil; klien yang mengirimnya sangat lambat (slowloris) diputus.
+    const timer = setTimeout(() => {
+      reject(new HttpError(408, 'Permintaan terlalu lama'));
+      req.destroy();
+    }, 15000);
     req.on('data', (c) => {
       data += c;
       if (data.length > 1e6) {
+        clearTimeout(timer);
         reject(new HttpError(413, 'Data terlalu besar'));
         req.destroy();
       }
     });
     req.on('end', () => {
+      clearTimeout(timer);
       try {
         resolve(data ? JSON.parse(data) : {});
       } catch {
         reject(new HttpError(400, 'JSON tidak valid'));
       }
     });
-    req.on('error', reject);
+    req.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
   });
 }
 
@@ -147,6 +160,8 @@ async function api(req, res, url) {
   const screenMatch = p.match(/^\/api\/screen\/([a-z0-9-]{1,40})$/);
   if (m === 'GET' && screenMatch) return send(res, 200, svc.screenConfig(screenMatch[1]));
   if (m === 'POST' && p === '/api/tickets') {
+    // Kiosk berbagi satu alamat dan dipakai manusia, jadi batasnya longgar; cukup untuk menahan skrip pembanjir nomor.
+    hit('ticket:' + clientIp(req), Number(process.env.TICKET_RATE || 30));
     const b = await readJson(req);
     // Prioritas dari kiosk publik hanya diterima bila admin mengaktifkannya.
     if (b.priority && getSettings().priority_enabled !== '1') {
@@ -161,7 +176,10 @@ async function api(req, res, url) {
   if (tk) {
     const token = tk[1];
     if (!tk[2] && m === 'GET') return send(res, 200, svc.ticketStatus(token));
-    if (tk[2] === '/push' && m === 'POST') return send(res, 200, notify.subscribe(token, (await readJson(req)).subscription));
+    if (tk[2] === '/push' && m === 'POST') {
+      hit('push:' + clientIp(req), 20);
+      return send(res, 200, notify.subscribe(token, (await readJson(req)).subscription));
+    }
     if (tk[2] === '/qr.svg' && m === 'GET') {
       svc.ticketStatus(token); // 404 bila tiket tidak ada
       const base = `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`;
@@ -282,14 +300,34 @@ async function adminApi(req, res, url, session) {
   if (scrId && m === 'DELETE') return send(res, 200, svc.deleteScreen(scrId));
 
   if (m === 'GET' && p === '/api/admin/users') return send(res, 200, auth.listUsers());
-  if (m === 'POST' && p === '/api/admin/users') return send(res, 201, await auth.saveUser(null, await readJson(req)));
+  if (m === 'POST' && p === '/api/admin/users') {
+    const b = await readJson(req);
+    const r = await auth.saveUser(null, b);
+    audit('user_created', { by: session.username, username: b.username, role: b.role === 'admin' ? 'admin' : 'staff' });
+    return send(res, 201, r);
+  }
   const userId = idOf(/^\/api\/admin\/users\/(\d+)$/);
-  if (userId && m === 'PUT') return send(res, 200, await auth.saveUser(userId, await readJson(req)));
-  if (userId && m === 'DELETE') return send(res, 200, auth.deleteUser(userId, session.userId));
+  if (userId && m === 'PUT') {
+    const b = await readJson(req);
+    const r = await auth.saveUser(userId, b);
+    // Perubahan yang sensitif dicatat tanpa nilai password.
+    audit('user_updated', {
+      by: session.username, id: userId, username: b.username, role: b.role === 'admin' ? 'admin' : 'staff',
+      active: !(b.active === false || b.active === 0), passwordChanged: !!b.password,
+    });
+    return send(res, 200, r);
+  }
+  if (userId && m === 'DELETE') {
+    const r = auth.deleteUser(userId, session.userId);
+    audit('user_deleted', { by: session.username, id: userId });
+    return send(res, 200, r);
+  }
 
   if (m === 'PUT' && p === '/api/admin/settings') {
     const oldLogo = getSettings().org_logo;
-    const r = svc.saveSettings(await readJson(req));
+    const body = await readJson(req);
+    const r = svc.saveSettings(body);
+    audit('settings_changed', { by: session.username, keys: Object.keys(body) });
     if (oldLogo && oldLogo !== getSettings().org_logo) dropIfUnused(path.basename(oldLogo));
     return send(res, 200, r);
   }
@@ -331,6 +369,12 @@ function handleUpload(req, url) {
       req.resume();
       return reject(new HttpError(400, 'Format file tidak didukung'));
     }
+    // Tolak dari header bila ukuran yang diumumkan sudah melebihi batas, tanpa menunggu badan terkirim.
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > MAX_UPLOAD) {
+      req.resume();
+      return reject(new HttpError(413, 'File melebihi 300 MB'));
+    }
     const id = crypto.randomBytes(10).toString('hex');
     const transcode = media.VIDEO_EXT.has(ext) && media.ffmpegAvailable;
     // Hasil transcoding selalu .mp4; sumbernya disimpan sementara sebagai <id>.src<ext>.
@@ -353,6 +397,9 @@ function handleUpload(req, url) {
     req.pipe(out);
     out.on('finish', () => {
       if (failed) return;
+      // Periksa isi terhadap ekstensi (tanda tangan berkas; SVG tanpa skrip) sebelum menerima.
+      const verdict = checkUpload(dest, ext);
+      if (!verdict.ok) return fail(new HttpError(400, verdict.reason));
       if (transcode) {
         media.enqueueTranscode(dest, path.join(UPLOAD_DIR, name), name);
         return resolve({ file: name, url: `/uploads/${name}`, size, status: 'processing' });
@@ -475,6 +522,9 @@ async function handler(req, res) {
     const code = err instanceof HttpError ? err.code : 500;
     if (code === 500) console.error(err);
     if (res.headersSent) return res.end();
+    if (err && err.retryAfter) res.setHeader('retry-after', String(err.retryAfter));
+    // Badan permintaan yang ditolak mungkin masih mengalir (mis. unggahan terlalu besar): tutup koneksinya.
+    if (code === 413 || code === 408) res.setHeader('connection', 'close');
     send(res, code, { error: err instanceof HttpError ? err.message : 'Terjadi kesalahan pada server' });
   }
 }
@@ -488,6 +538,15 @@ if (TLS_CERT || TLS_KEY) {
 } else {
   server = http.createServer(handler);
 }
+// Batas waktu: header harus lengkap dalam 20 detik (menahan slowloris); badan permintaan diberi waktu
+// lebih lama agar unggahan video besar lewat Wi-Fi lambat tidak terputus (ukurannya sudah dibatasi 300 MB).
+server.headersTimeout = 20000;
+// Node memeriksa batas waktu koneksi hanya tiap 30 detik secara bawaan, sehingga headersTimeout 20 detik
+// baru bekerja belasan detik kemudian. Periksa tiap 5 detik agar penahanan koneksi diputus tepat waktu.
+server.connectionsCheckingInterval = 5000;
+server.requestTimeout = 30 * 60 * 1000;
+server.keepAliveTimeout = 10000;
+server.maxHeadersCount = 60;
 const SCHEME = TLS_CERT ? 'https' : 'http';
 
 // WebSocket hanya mengirim ke klien; pesan dari klien tidak dipakai, jadi ukurannya dibatasi kecil.

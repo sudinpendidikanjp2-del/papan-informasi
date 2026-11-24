@@ -27,6 +27,8 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Akun admin pertama |
 | `TLS_CERT`, `TLS_KEY` | Path sertifikat dan kunci privat PEM; keduanya harus diisi untuk mengaktifkan HTTPS |
 | `TRUST_PROXY` | `1` bila di belakang reverse proxy tepercaya (lihat bagian HTTPS) |
+| `TICKET_RATE` | Batas pengambilan nomor per alamat per menit di kiosk (default 30) |
+| `WS_MAX_PER_IP` | Batas koneksi WebSocket per alamat (default 100) |
 | `VAPID_SUBJECT` | Subjek VAPID untuk notifikasi push (`mailto:` atau `https:`), opsional |
 
 ## Halaman
@@ -127,6 +129,17 @@ Sertifikat self-signed di atas hanya untuk jaringan lokal (browser akan meminta 
 
 Bila server berada di belakang reverse proxy yang menangani HTTPS, set `TRUST_PROXY=1` agar server memakai `X-Forwarded-Proto` (untuk menandai cookie `Secure`) dan `X-Forwarded-For` (agar pembatas login menghitung per klien, bukan per proxy). Jangan aktifkan `TRUST_PROXY` bila server dapat dijangkau langsung oleh klien, karena header itu bisa dipalsukan.
 
+## Keamanan
+
+- **Header dan CSP**: semua respons membawa `Content-Security-Policy` (skrip hanya dari asal sendiri, tanpa skrip inline), `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, dan HSTS di HTTPS. Berkas unggahan SVG disajikan dengan CSP `sandbox` sehingga SVG berskrip tidak berjalan bila dibuka langsung.
+- **Unggahan**: isi berkas diperiksa terhadap ekstensinya (tanda tangan PNG, JPEG, GIF, WEBP, PDF, MP4, WebM), dan SVG ditolak bila memuat `<script>`, atribut `on...=`, `javascript:`, `<foreignObject>`, `@import`, atau rujukan `href` selain `#id` internal. Ukuran yang diumumkan di header `Content-Length` ditolak sejak awal bila melebihi 300 MB.
+- **Validasi data**: nama berkas konten harus hasil unggahan dengan ekstensi yang cocok dengan jenis kontennya, logo harus berkas unggahan, prefix kategori hanya huruf dan angka (1-3 karakter), dan zona waktu harus dikenal. Teks bebas (nama instansi, judul, nama meja, dan sebagainya) selalu di-escape saat ditampilkan; audit otomatis dengan payload XSS di semua field dan semua halaman tidak menemukan titik bocor.
+- **Pembatasan laju**: login (lihat atas), pengambilan nomor di kiosk (`TICKET_RATE`), dan pendaftaran push. Koneksi WebSocket dibatasi per alamat dan pesannya dibatasi 1 KB.
+- **Ketahanan HTTP**: header harus lengkap dalam 20 detik, badan JSON dalam 15 detik, dan permintaan dengan target atau encoding rusak mendapat 400 tanpa menjatuhkan server.
+- **Log audit**: satu baris JSON berawalan `AUDIT` ke stdout (journald atau `docker logs`) untuk login berhasil, gagal, dan terkunci, pembuatan, perubahan, dan penghapusan pegawai, serta perubahan pengaturan. Password dan token tidak pernah dicatat, dan username yang bentuknya bukan username wajar (mis. password yang salah diketik di kolom username) tidak dicatat.
+
+Lihat juga bagian Login pegawai dan HTTPS di atas.
+
 ## Struktur
 
 ```
@@ -136,6 +149,9 @@ server/
   auth.js      login, sesi, pembatas percobaan, manajemen pegawai
   media.js     konversi video (ffmpeg) dan pembersihan berkas yatim
   notify.js    langganan dan pengiriman push, QR, kunci VAPID
+  upload-check.js  validasi isi berkas unggahan (tanda tangan, SVG aman)
+  ratelimit.js pembatas laju endpoint publik
+  audit.js     log audit JSON ke stdout
   db.js        skema SQLite, migrasi ringan, dan data awal
 public/
   display.html, kiosk.html, operator.html, admin.html, t.html
@@ -144,6 +160,7 @@ public/
   js/common.js utilitas API, WebSocket, waktu server, suara
   js/icons.js  ikon SVG
   js/display.js logika papan informasi
+  js/kiosk.js, js/operator.js, js/track.js, js/admin.js  logika halaman masing-masing
   js/admin.js  logika dasbor admin
 scripts/
   copy-vendor.js  menyalin pdf.js ke public/vendor (dipanggil postinstall)

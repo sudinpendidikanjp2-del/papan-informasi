@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { db, tx } from './db.js';
 import { HttpError, hasActiveTicket, bus } from './service.js';
+import { audit } from './audit.js';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -138,18 +139,30 @@ export function getSession(token) {
   };
 }
 
+// Orang sering salah mengetik password di kolom username; nilai yang bentuknya bukan username wajar tidak dicatat.
+const loggable = (u) => (/^[A-Za-z0-9._-]{1,32}$/.test(u) ? u : '(bentuk tidak valid)');
+
 export async function login(username, password, ip) {
   const uname = String(username || '').trim();
   // Awalan "ip:" dan "acct:" mencegah nama pengguna tertentu (mis. "*") bertabrakan dengan kunci alamat.
   const addressKey = `ip:${ip}`;
   const accountKey = `acct:${ip}|${uname.toLowerCase().slice(0, 64)}`;
   if (Date.now() - lastSweep > 60000) sweepAttempts();
-  reserveAttempt(addressKey, MAX_PER_ADDRESS);
-  reserveAttempt(accountKey, MAX_PER_ACCOUNT);
+  try {
+    reserveAttempt(addressKey, MAX_PER_ADDRESS);
+    reserveAttempt(accountKey, MAX_PER_ACCOUNT);
+  } catch (e) {
+    audit('login_locked', { ip, username: loggable(uname) });
+    throw e;
+  }
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(uname);
   const ok = await verifyPassword(String(password || ''), user ? user.password_hash : await dummy());
-  if (!user || !user.active || !ok) throw new HttpError(401, 'Username atau password salah');
+  if (!user || !user.active || !ok) {
+    audit('login_failed', { ip, username: loggable(uname) });
+    throw new HttpError(401, 'Username atau password salah');
+  }
   releaseAttempts(accountKey, addressKey);
+  audit('login_ok', { ip, username: user.username, role: user.role });
   return { token: createSession(user.id), userId: user.id };
 }
 
