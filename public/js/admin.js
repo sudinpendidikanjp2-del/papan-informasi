@@ -125,8 +125,9 @@
     $('meAv').textContent = I.initials(me.name);
     $('loginView').classList.add('hidden');
     $('shell').classList.remove('hidden');
-    await loadAll();
+    // Pilih halaman lebih dulu agar jejak halaman dan menu langsung benar selagi data dimuat.
     go(PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard');
+    await loadAll();
   }
 
   $('loginForm').addEventListener('submit', async (e) => {

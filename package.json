@@ -16,6 +16,6 @@
     "pdfjs-dist": "4.10.38",
     "qrcode-generator": "1.4.4",
     "web-push": "3.6.7",
-    "ws": "^8.18.0"
+    "ws": "8.23.0"
   }
 }

@@ -407,14 +407,69 @@ function serveFile(req, res, filePath, root) {
 
 // ---------- Server ----------
 
+// Kebijakan konten: skrip hanya dari asal sendiri (tanpa skrip inline), gaya inline diizinkan karena
+// atribut style dinamis dipakai di banyak tempat. Worker blob diperlukan sebagai cadangan pdf.js.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "connect-src 'self' ws: wss:",
+  "worker-src 'self' blob:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+].join('; ');
+
+// Header keamanan untuk setiap respons, termasuk galat. Berkas unggahan diperlakukan khusus:
+// SVG dapat memuat skrip, jadi bila dibuka langsung ia di-sandbox (sebagai <img> tetap aman karena
+// skrip tidak berjalan di sana). Jenis lain tidak diberi CSP karena penampil PDF bawaan browser
+// tidak berjalan di dokumen yang di-sandbox; nosniff sudah mencegah salah tafsir tipe.
+function setSecurityHeaders(req, res, pathname) {
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('x-frame-options', 'SAMEORIGIN');
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  if (isHttps(req)) res.setHeader('strict-transport-security', 'max-age=15552000');
+  if (pathname.startsWith('/uploads/')) {
+    if (pathname.toLowerCase().endsWith('.svg')) {
+      res.setHeader('content-security-policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'");
+    }
+  } else {
+    res.setHeader('content-security-policy', CSP);
+  }
+}
+
 async function handler(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // Permintaan dengan target rusak tidak boleh menjatuhkan proses (handler async yang melempar
+  // di luar try menjadi unhandled rejection).
+  let url;
+  try {
+    url = new URL(req.url, 'http://localhost');
+  } catch {
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('Permintaan tidak valid');
+    return;
+  }
+  setSecurityHeaders(req, res, url.pathname);
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (url.pathname.startsWith('/uploads/')) {
       return serveFile(req, res, path.join(UPLOAD_DIR, path.basename(url.pathname)), UPLOAD_DIR);
     }
-    let rel = url.pathname === '/' ? 'display.html' : decodeURIComponent(url.pathname.slice(1));
+    let rel = '';
+    if (url.pathname === '/') {
+      rel = 'display.html';
+    } else {
+      try {
+        rel = decodeURIComponent(url.pathname.slice(1));
+      } catch {
+        throw new HttpError(400, 'Alamat tidak valid');
+      }
+    }
+    if (rel.includes('\0')) throw new HttpError(400, 'Alamat tidak valid');
     return serveFile(req, res, path.join(PUBLIC_DIR, rel), PUBLIC_DIR);
   } catch (err) {
     const code = err instanceof HttpError ? err.code : 500;
@@ -435,10 +490,44 @@ if (TLS_CERT || TLS_KEY) {
 }
 const SCHEME = TLS_CERT ? 'https' : 'http';
 
-wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (ws) => {
+// WebSocket hanya mengirim ke klien; pesan dari klien tidak dipakai, jadi ukurannya dibatasi kecil.
+// Jumlah koneksi per alamat dibatasi (di belakang proxy, set TRUST_PROXY=1 agar alamat klien yang dihitung).
+const WS_MAX_PER_IP = Number(process.env.WS_MAX_PER_IP || 100);
+const wsPerIp = new Map();
+wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  maxPayload: 1024,
+  perMessageDeflate: false,
+  verifyClient: (info, done) => {
+    const ip = clientIp(info.req);
+    if ((wsPerIp.get(ip) || 0) >= WS_MAX_PER_IP) return done(false, 429, 'Terlalu banyak koneksi');
+    done(true);
+  },
+});
+wss.on('connection', (ws, req) => {
+  const ip = clientIp(req);
+  wsPerIp.set(ip, (wsPerIp.get(ip) || 0) + 1);
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+  // Tanpa pendengar 'error', pesan melebihi maxPayload akan melempar dan menjatuhkan proses.
+  ws.on('error', () => {});
+  ws.on('message', () => {});
+  ws.on('close', () => {
+    const n = (wsPerIp.get(ip) || 1) - 1;
+    if (n <= 0) wsPerIp.delete(ip); else wsPerIp.set(ip, n);
+  });
   ws.send(JSON.stringify({ type: 'hello', now: Date.now() }));
 });
+// Buang koneksi mati (perangkat mati mendadak, Wi-Fi putus) agar tidak menumpuk dan menghabiskan batas.
+const wsHeartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* koneksi sudah tertutup */ }
+  }
+}, 30000);
+wsHeartbeat.unref();
 
 db.prepare('SELECT 1').get();
 await auth.bootstrapAdmin();
