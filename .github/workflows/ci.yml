@@ -30,7 +30,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - name: Pasang ffmpeg (agar tes konversi video ikut berjalan)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        # ffmpeg bersifat opsional (tes video dilewati bila tidak ada), jadi hambatan mirror apt tidak boleh
+        # menggantung seluruh job: batas waktu langkah, percobaan ulang, dan lanjut bila gagal.
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg
       - run: npm ci
       - name: Unit dan integrasi
         run: npm test
@@ -48,7 +56,15 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Pasang ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        # ffmpeg bersifat opsional (tes video dilewati bila tidak ada), jadi hambatan mirror apt tidak boleh
+        # menggantung seluruh job: batas waktu langkah, percobaan ulang, dan lanjut bila gagal.
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg
       - run: npm ci
       # Playwright dipasang tanpa mengubah package.json/package-lock.json (--no-save).
       - name: Pasang Playwright dan Chromium
