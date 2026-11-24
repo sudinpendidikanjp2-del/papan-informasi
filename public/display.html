@@ -6,161 +6,184 @@
   <title>Papan Informasi</title>
   <link rel="stylesheet" href="/css/app.css">
   <style>
-    html, body { overflow: hidden; background: var(--bg); }
-    .display {
-      height: 100vh; display: grid;
-      grid-template-rows: auto 1fr auto;
-      background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
-    }
+    /* Skala mengikuti lebar layar: 1920px = 16px. Semua ukuran di halaman ini memakai rem. */
+    html { font-size: clamp(12px, .8334vw, 44px); }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-size: 1rem; background: var(--bg); }
+
+    .board { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 1.25rem; padding: 1.25rem 1.75rem; }
 
     /* Header */
-    .head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 28px; background: var(--blue); color: #fff;
-      border-bottom: 6px solid var(--yellow);
-    }
-    .brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
-    .brand img { height: 64px; width: auto; max-width: 180px; object-fit: contain; background: #fff; border-radius: 12px; padding: 6px; }
-    .brand .name { font-size: clamp(20px, 2.2vw, 34px); font-weight: 700; letter-spacing: .01em; line-height: 1.15; }
-    .clock { text-align: right; }
-    .clock .time { font-size: clamp(28px, 3vw, 48px); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--yellow); line-height: 1; }
-    .clock .date { font-size: clamp(13px, 1.1vw, 17px); opacity: .92; margin-top: 4px; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: 1.5rem; padding: .85rem 1.4rem; box-shadow: var(--shadow-sm); }
+    .brand { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+    .brand img { height: 3.6rem; width: auto; max-width: 11rem; object-fit: contain; }
+    .brand .nm { font-size: 1.85rem; font-weight: 700; letter-spacing: -.01em; line-height: 1.1; }
+    .brand .sc { font-size: 1rem; color: var(--muted); margin-top: .2rem; }
+    .clock { display: flex; align-items: center; gap: 1rem; }
+    .clock .t { font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+    .clock .d { font-size: 1rem; color: var(--ink-2); text-align: right; }
+    .clock .chip-t { background: var(--blue-50); color: var(--blue-700); border-radius: 1rem; padding: .55rem 1rem; display: flex; align-items: center; gap: .7rem; }
+    .clock .chip-t .ic { width: 1.5rem; height: 1.5rem; }
 
-    /* Body */
-    .body { display: grid; grid-template-columns: 1fr clamp(300px, 26vw, 420px); gap: 22px; padding: 22px 28px; min-height: 0; }
+    /* Badan */
+    .body { display: grid; grid-template-columns: minmax(0, 1fr) 29rem; gap: 1.25rem; min-height: 0; }
+    .stage { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 1rem; min-height: 0; }
 
-    .stage { position: relative; min-height: 0; display: flex; flex-direction: column; }
-    .slide {
-      flex: 1; min-height: 0; background: var(--card); border-radius: 22px;
-      box-shadow: var(--shadow); border: 1px solid var(--line);
-      overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center;
-      animation: fadeIn .6s ease;
-    }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-    .slide-text { padding: clamp(24px, 4vw, 64px); max-width: 1100px; text-align: center; }
-    .slide-text h2 { font-size: clamp(30px, 4vw, 60px); margin: 0 0 18px; color: var(--blue); line-height: 1.15; }
-    .slide-text p { font-size: clamp(18px, 2.2vw, 32px); line-height: 1.5; margin: 0; white-space: pre-line; color: var(--ink); }
-    .slide-text::before {
-      content: ""; display: block; width: 96px; height: 6px; background: var(--yellow);
-      border-radius: 6px; margin: 0 auto 26px;
-    }
-    .slide img, .slide video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; background: #0b1a2e; }
+    .slide { position: relative; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 1.6rem; box-shadow: var(--shadow); overflow: hidden; display: flex; align-items: center; justify-content: center; animation: rise .5s ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(.5rem); } to { opacity: 1; transform: none; } }
+    .slide .fill { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+    .slide img, .slide video { width: 100%; height: 100%; object-fit: contain; background: #0c1b34; }
+    .slide img.soft { background: var(--blue-50); }
     .slide iframe { width: 100%; height: 100%; border: 0; background: #fff; }
-    .empty { color: var(--muted); font-size: 22px; }
+    .slide canvas { max-width: 100%; max-height: 100%; background: #fff; box-shadow: var(--shadow-lg); border-radius: .3rem; }
+    /* Ruang di atas untuk pil hitung mundur agar tidak menutupi halaman. */
+    .slide .pdfbg { background: var(--blue-50); padding: 3.8rem 1.2rem 1.2rem; }
+    .slide-empty { color: var(--muted); font-size: 1.5rem; }
 
-    .countdown {
-      position: absolute; right: 16px; top: 16px; background: var(--blue); color: #fff;
-      border-radius: 14px; padding: 8px 14px; font-weight: 700; font-variant-numeric: tabular-nums;
-      font-size: 20px; box-shadow: var(--shadow); display: flex; gap: 8px; align-items: center;
-    }
-    .countdown::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--yellow); }
-    .progress { height: 8px; background: var(--line); border-radius: 8px; margin-top: 12px; overflow: hidden; }
-    .progress > span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--yellow)); }
+    .slide-text { max-width: 62rem; padding: 3rem; text-align: center; }
+    .slide-text .bar { width: 5rem; height: .38rem; border-radius: 1rem; background: var(--yellow); margin: 0 auto 1.8rem; }
+    .slide-text h2 { font-size: 3.4rem; line-height: 1.12; letter-spacing: -.02em; color: var(--blue-700); margin-bottom: 1.2rem; }
+    .slide-text p { font-size: 1.85rem; line-height: 1.5; margin: 0; white-space: pre-line; color: var(--ink); }
+
+    .slide .cd { position: absolute; left: 1.2rem; top: 1.2rem; z-index: 3; }
+    /* Di atas latar terang pil perlu solid; versi transparan hanya cocok di atas kartu biru. */
+    .slide .cd .hero-pill { background: var(--ink); box-shadow: var(--shadow); }
+    .slide .ttl { position: absolute; right: 1.2rem; top: 1.2rem; z-index: 3; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 999px; padding: .45rem 1rem; font-size: .95rem; font-weight: 600; max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hero-pill { font-size: 1rem; padding: .45rem 1rem; }
+    .hero-pill .ic { width: 1.1rem; height: 1.1rem; }
+
+    /* Penanda progres tayangan */
+    .tracker { background: var(--surface); border: 1px solid var(--line); border-radius: 1.3rem; padding: .9rem 1.2rem 1rem; box-shadow: var(--shadow-sm); }
+    .tracker .lbl { display: flex; justify-content: space-between; align-items: center; font-size: .85rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: .7rem; }
+    .tracker .lbl { margin-bottom: 0; }
+    .tracker .segs { display: flex; gap: .4rem; margin-top: 2.3rem; }
+    .seg { position: relative; flex: 1; height: .7rem; border-radius: 1rem; background: var(--blue-50); overflow: visible; }
+    .seg > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 1rem; background: var(--blue); width: 0; }
+    .seg.done > i { width: 100%; }
+    .seg.cur .bubble { position: absolute; top: -1.9rem; transform: translateX(-50%); background: var(--yellow); color: var(--ink); font-weight: 700; font-size: .85rem; padding: .1rem .55rem; border-radius: 999px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
     /* Panel antrian */
-    .queue { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow: hidden; }
-    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); padding: 16px 18px; }
-    .panel h3 { margin: 0 0 12px; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-    .calling { background: var(--yellow); border-color: #f2b400; }
-    .calling h3 { color: var(--ink); }
-    .calling .now-label { font-size: clamp(40px, 5vw, 76px); font-weight: 800; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
-    .calling .now-counter { font-size: clamp(18px, 1.8vw, 26px); font-weight: 600; margin-top: 6px; color: var(--ink); }
-    .calling .idle-text { font-size: 20px; color: var(--ink); opacity: .75; }
-    .counter-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
-    .counter-row:last-child { border-bottom: 0; }
-    .counter-row .cname { font-weight: 700; font-size: 17px; }
-    .counter-row .csub { font-size: 13px; color: var(--muted); }
-    .num { font-weight: 800; font-size: 22px; color: var(--blue); font-variant-numeric: tabular-nums; }
-    .badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
-    .badge.free { background: #e4f6ea; color: #1e7a3c; }
-    .badge.busy { background: var(--blue-soft); color: var(--blue); }
-    .cat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 16px; }
-    .cat-row:last-child { border-bottom: 0; }
-    .cat-row b { color: var(--blue); font-variant-numeric: tabular-nums; font-size: 20px; }
+    .queue { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 1rem; min-height: 0; }
+    .calling { padding: 1.4rem 1.5rem; }
+    .calling .top { display: flex; justify-content: space-between; align-items: center; gap: .8rem; margin-bottom: 1rem; }
+    .calling .eyebrow { font-size: 1.05rem; }
+    .calling .big { font-size: 7.2rem; margin: .2rem 0 .6rem; }
+    .calling .big.idle { font-size: 4rem; opacity: .85; }
+    .calling .where { font-size: 1.5rem; font-weight: 600; }
+    .calling .hero-stats { margin-top: 1.2rem; grid-template-columns: 1fr 1fr; }
+    .calling .hero-stat { flex-direction: column; align-items: flex-start; gap: .1rem; padding: .8rem 1rem; }
+    .calling .hero-stat .k { font-size: .95rem; }
+    .calling .hero-stat .v { font-size: 2rem; }
+    .calling.flash { animation: pulse 1.2s ease 2; }
+    @keyframes pulse { 0%,100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 .5rem rgba(255,197,46,.55), var(--shadow); } }
+
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 1.4rem; padding: 1.1rem 1.25rem; box-shadow: var(--shadow-sm); min-height: 0; overflow: hidden; }
+    .panel h3 { font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: .8rem; }
+    .counters { display: grid; gap: .6rem; }
+    .counters.two { grid-template-columns: 1fr 1fr; }
+    .ctr { display: flex; align-items: center; gap: .8rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--soft); min-width: 0; }
+    .ctr .av { width: 2.6rem; height: 2.6rem; border-radius: .8rem; display: grid; place-items: center; background: var(--blue-100); color: var(--blue-700); font-weight: 800; font-size: 1.05rem; flex: none; }
+    .ctr.busy .av { background: var(--blue); color: #fff; }
+    .ctr .nm { font-weight: 700; font-size: 1.1rem; line-height: 1.15; }
+    .ctr .sb { font-size: .85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ctr .rt { margin-left: auto; text-align: right; display: grid; gap: .2rem; justify-items: end; flex: none; }
+    .ctr .lb { font-weight: 800; font-size: 1.35rem; color: var(--blue-700); font-variant-numeric: tabular-nums; line-height: 1; }
+    .pill { font-size: .8rem; }
+    .cats { display: grid; gap: .1rem; }
+    .cat { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .5rem 0; border-bottom: 1px dashed var(--line); font-size: 1.1rem; }
+    .cat:last-child { border-bottom: 0; }
+    .cat .w { font-weight: 800; font-size: 1.5rem; color: var(--blue-700); font-variant-numeric: tabular-nums; }
 
     /* Footer */
-    .foot {
-      background: var(--blue-deep); color: #fff; display: flex; align-items: center; gap: 16px;
-      padding: 10px 28px; font-size: 16px; overflow: hidden; white-space: nowrap;
-    }
-    .foot .label { background: var(--yellow); color: var(--ink); font-weight: 800; padding: 6px 12px; border-radius: 8px; flex: none; }
-    .foot .items { display: flex; gap: 28px; overflow: hidden; }
-    .foot .items span b { color: var(--yellow); font-variant-numeric: tabular-nums; }
+    .foot { display: flex; align-items: center; gap: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 1.2rem; padding: .6rem 1.1rem; overflow: hidden; }
+    .foot .lbl { font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; flex: none; }
+    .foot .items { display: flex; gap: .6rem; overflow: hidden; white-space: nowrap; }
+    .rc { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--line-strong); border-radius: .9rem; padding: .3rem .8rem; font-size: 1rem; background: var(--soft); }
+    .rc b { color: var(--blue-700); font-variant-numeric: tabular-nums; }
 
-    /* Screensaver & aktivasi suara */
-    .screensaver {
-      position: fixed; inset: 0; background: #0b1a2e; z-index: 20; display: flex; align-items: center; justify-content: center;
-      animation: fadeIn .8s ease;
-    }
-    .screensaver video, .screensaver img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    .screensaver .ss-badge {
-      position: absolute; left: 24px; bottom: 24px; background: rgba(255,255,255,.92); color: var(--ink);
-      padding: 10px 16px; border-radius: 14px; display: flex; gap: 12px; align-items: center; font-weight: 700;
-    }
-    .screensaver .ss-badge img { height: 40px; }
-    .screensaver .ss-clock { position: absolute; right: 24px; bottom: 24px; color: #fff; font-size: 44px; font-weight: 700; text-shadow: 0 2px 12px rgba(0,0,0,.5); font-variant-numeric: tabular-nums; }
+    /* Screensaver */
+    .saver { position: fixed; inset: 0; background: #0c1b34; z-index: 20; animation: rise .8s ease; }
+    .saver video, .saver img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .saver .glass { position: absolute; left: 2rem; bottom: 2rem; display: flex; align-items: center; gap: 1rem; background: rgba(255,255,255,.92); border-radius: 1.2rem; padding: .8rem 1.3rem; font-weight: 700; font-size: 1.3rem; box-shadow: var(--shadow-lg); }
+    .saver .glass img { position: static; width: auto; height: 2.6rem; object-fit: contain; background: none; }
+    .saver .clk { position: absolute; right: 2rem; bottom: 2rem; background: rgba(15,31,58,.7); color: #fff; border-radius: 1.2rem; padding: .6rem 1.3rem; font-size: 3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-    .unlock {
-      position: fixed; inset: 0; z-index: 30; background: rgba(11,79,158,.92); color: #fff;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px;
-    }
-    .unlock h2 { margin: 0; font-size: 32px; }
-    .unlock p { margin: 0; opacity: .9; }
-    .offline {
-      position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25; background: #c0392b; color: #fff;
-      padding: 6px 14px; border-radius: 10px; font-size: 14px; font-weight: 600;
-    }
+    .unlock { position: fixed; inset: 0; z-index: 30; background: rgba(15,42,107,.94); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.2rem; text-align: center; padding: 2rem; }
+    .unlock h2 { font-size: 2.4rem; }
+    .unlock p { margin: 0; opacity: .92; font-size: 1.2rem; }
+    .unlock .btn { font-size: 1.3rem; padding: 1rem 2.2rem; border-radius: 1rem; }
+    .offline { position: fixed; top: .8rem; left: 50%; transform: translateX(-50%); z-index: 25; background: var(--red); color: #fff; padding: .45rem 1rem; border-radius: 999px; font-size: .95rem; font-weight: 600; box-shadow: var(--shadow-lg); }
   </style>
 </head>
 <body>
-  <div class="display" id="display">
+  <div class="board" id="board">
     <header class="head">
       <div class="brand">
-        <img id="logo" alt="Logo" class="hidden">
-        <div class="name" id="orgName">Nama Instansi</div>
+        <img id="logo" alt="" class="hidden">
+        <div>
+          <div class="nm" id="orgName">Nama Instansi</div>
+          <div class="sc hidden" id="screenName"></div>
+        </div>
       </div>
       <div class="clock">
-        <div class="time" id="clock">--:--:--</div>
-        <div class="date" id="date">&nbsp;</div>
+        <div class="d" id="date">&nbsp;</div>
+        <div class="chip-t">
+          <span id="clockIc"></span>
+          <span class="t" id="clock">--:--:--</span>
+        </div>
       </div>
     </header>
 
     <main class="body">
       <section class="stage">
-        <div class="slide" id="slide"><div class="empty">Belum ada informasi</div></div>
+        <div class="slide" id="slide"><div class="slide-empty">Belum ada informasi</div></div>
+        <div class="tracker" id="trackerBox">
+          <div class="lbl"><span>Tayangan</span><span id="trackerCount"></span></div>
+          <div class="segs" id="tracker"></div>
+        </div>
       </section>
 
       <aside class="queue">
-        <div class="panel calling" id="nowPanel">
-          <h3>Sedang dipanggil</h3>
-          <div id="nowBody"><div class="idle-text">Menunggu panggilan</div></div>
+        <div class="hero calling" id="nowPanel">
+          <div class="top">
+            <span class="eyebrow">Sedang dipanggil</span>
+            <span class="hero-pill hidden" id="nowPill"></span>
+          </div>
+          <div id="nowBody"><div class="big idle num">&mdash;</div><div class="where">Menunggu panggilan berikutnya</div></div>
+          <div class="hero-stats">
+            <div class="hero-stat"><span class="k">Menunggu</span><span class="v" id="statWaiting">0</span></div>
+            <div class="hero-stat"><span class="k">Sedang dilayani</span><span class="v" id="statServing">0</span></div>
+          </div>
         </div>
-        <div class="panel" style="min-height:0; overflow:hidden; flex:1">
+
+        <div class="panel">
           <h3>Meja layanan</h3>
-          <div id="counters"></div>
+          <div class="counters" id="counters"></div>
         </div>
+
         <div class="panel">
           <h3>Antrian menunggu</h3>
-          <div id="cats"></div>
+          <div class="cats" id="cats"></div>
         </div>
       </aside>
     </main>
 
     <footer class="foot">
-      <span class="label">Panggilan terakhir</span>
+      <span class="lbl">Panggilan terakhir</span>
       <div class="items" id="recent"></div>
     </footer>
   </div>
 
-  <div class="screensaver hidden" id="saver"></div>
-  <div class="offline hidden" id="offline">Koneksi ke server terputus, mencoba lagi…</div>
+  <div class="saver hidden" id="saver"></div>
+  <div class="offline hidden" id="offline" role="status">Koneksi ke server terputus, mencoba lagi…</div>
 
   <div class="unlock" id="unlock">
     <h2>Papan Informasi</h2>
-    <p>Ketuk layar untuk mengaktifkan suara panggilan antrian.</p>
-    <button class="btn btn-accent" id="unlockBtn" style="font-size:20px;padding:16px 28px">Aktifkan</button>
+    <p>Ketuk layar untuk mengaktifkan bunyi dan suara panggilan antrian.</p>
+    <button class="btn btn-accent" id="unlockBtn">Aktifkan</button>
   </div>
 
+  <script src="/js/icons.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/display.js"></script>
 </body>

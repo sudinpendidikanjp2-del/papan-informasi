@@ -113,5 +113,8 @@
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  window.Papan = { api, store, timeSync, connectWS, chime, speak, fmtTime, fmtDate, toast, esc, pad };
+  // Ikon SVG (butuh icons.js dimuat lebih dulu); kosong bila tidak tersedia.
+  const icon = (name, cls) => (window.Icons ? window.Icons.svg(name, cls) : '');
+
+  window.Papan = { api, store, icon, timeSync, connectWS, chime, speak, fmtTime, fmtDate, toast, esc, pad };
 })();

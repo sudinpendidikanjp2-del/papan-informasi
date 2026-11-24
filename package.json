@@ -6,12 +6,14 @@
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "postinstall": "node scripts/copy-vendor.js"
   },
   "engines": {
     "node": ">=22.13"
   },
   "dependencies": {
+    "pdfjs-dist": "4.10.38",
     "ws": "^8.18.0"
   }
 }

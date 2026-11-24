@@ -75,8 +75,16 @@ export function hasActiveTicket(counterId) {
 
 // ---------- Antrian: pengunjung ----------
 
+// Daftar kategori untuk kiosk, lengkap dengan jumlah menunggu dan perkiraan tunggu bagi pendatang baru.
 export function listCategories() {
-  return db.prepare('SELECT id, name, prefix FROM categories ORDER BY sort, id').all();
+  const day = today();
+  return db
+    .prepare('SELECT id, name, prefix FROM categories ORDER BY sort, id')
+    .all()
+    .map((c) => {
+      const { ahead, etaMinutes } = aheadAndEta(c.id, day, 0);
+      return { ...c, waiting: ahead, etaMinutes };
+    });
 }
 
 // Rata-rata lama layanan hari ini untuk satu kategori (ms), atau null bila belum ada data.
