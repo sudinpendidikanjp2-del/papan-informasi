@@ -1,7 +1,5 @@
 // Utilitas bersama: API, token, WebSocket, waktu server, suara panggilan.
 (function () {
-  const TOKEN_KEY = 'papan_token';
-
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -14,11 +12,8 @@
       headers['content-type'] = 'application/json';
       opts.body = JSON.stringify(opts.body);
     }
-    if (opts.auth) {
-      const t = store.get(TOKEN_KEY) || '';
-      headers.authorization = 'Bearer ' + t;
-    }
-    const res = await fetch(path, { ...opts, headers });
+    // Sesi login memakai cookie HttpOnly, dikirim otomatis pada permintaan satu asal.
+    const res = await fetch(path, { ...opts, headers, credentials: 'same-origin' });
     let data = null;
     try { data = await res.json(); } catch { /* bukan JSON */ }
     if (!res.ok) {
@@ -118,5 +113,5 @@
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  window.Papan = { api, store, TOKEN_KEY, timeSync, connectWS, chime, speak, fmtTime, fmtDate, toast, esc, pad };
+  window.Papan = { api, store, timeSync, connectWS, chime, speak, fmtTime, fmtDate, toast, esc, pad };
 })();

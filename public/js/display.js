@@ -7,11 +7,17 @@
   let snap = null;
   let unlocked = false;
 
+  // Layar ini diidentifikasi lewat ?screen=<slug>. Tanpa parameter: tampil semua antrian dan konten bersama.
+  const slug = (new URLSearchParams(location.search).get('screen') || '').trim().toLowerCase();
+  let screenCfg = null;
+  const qs = () => (slug ? '?screen=' + encodeURIComponent(slug) : '');
+
   // ---------- Pengaturan & jam ----------
 
   function applySettings() {
     $('orgName').textContent = settings.org_name || 'Nama Instansi';
-    document.title = (settings.org_name || 'Papan Informasi') + ' · Papan Informasi';
+    const screenName = screenCfg && screenCfg.name ? ' · ' + screenCfg.name : '';
+    document.title = (settings.org_name || 'Papan Informasi') + screenName + ' · Papan Informasi';
     const logo = $('logo');
     if (settings.org_logo) {
       logo.src = settings.org_logo;
@@ -176,7 +182,8 @@
 
   function isIdle() {
     if (!snap || !saverItems.length) return false;
-    const minutes = Math.max(1, parseInt(settings.idle_minutes || '3', 10));
+    const own = screenCfg && screenCfg.idleMinutes;
+    const minutes = Math.max(1, parseInt(own || settings.idle_minutes || '3', 10));
     return P.timeSync.now() - snap.lastActivity > minutes * 60000;
   }
 
@@ -280,31 +287,63 @@
 
   // ---------- Data loading ----------
 
+  function showBanner(text) {
+    const el = $('offline');
+    el.textContent = text;
+    el.classList.remove('hidden');
+  }
+
+  function hideBanner() {
+    if (!screenMissing) $('offline').classList.add('hidden');
+  }
+
+  // Jika slug tidak terdaftar, layar tetap berjalan (tanpa filter) tetapi menampilkan peringatan.
+  let screenMissing = false;
+  let effectiveSlugQs = qs();
+
+  async function loadScreen() {
+    if (!slug) return;
+    try {
+      screenCfg = await P.api('/api/screen/' + encodeURIComponent(slug));
+      screenMissing = false;
+      effectiveSlugQs = qs();
+    } catch (e) {
+      if (e.status === 404) {
+        screenCfg = null;
+        screenMissing = true;
+        effectiveSlugQs = '';
+        showBanner('Layar "' + slug + '" belum terdaftar di admin. Menampilkan konten bersama.');
+      }
+    }
+    applySettings();
+  }
+
   async function loadSettings() {
     settings = await P.api('/api/settings');
     applySettings();
   }
 
   async function loadPlaylist() {
-    applyPlaylist(await P.api('/api/playlist'));
+    applyPlaylist(await P.api('/api/playlist' + effectiveSlugQs));
   }
 
   async function loadState() {
     try {
-      snap = await P.api('/api/state');
+      snap = await P.api('/api/state' + effectiveSlugQs);
       renderQueue();
       updateSaver();
-      $('offline').classList.add('hidden');
+      hideBanner();
     } catch {
-      $('offline').classList.remove('hidden');
+      showBanner('Koneksi ke server terputus, mencoba lagi…');
     }
   }
 
   async function loadAll() {
     try {
+      await loadScreen();
       await Promise.all([loadSettings(), loadPlaylist(), loadState(), P.timeSync.sync()]);
     } catch {
-      $('offline').classList.remove('hidden');
+      showBanner('Koneksi ke server terputus, mencoba lagi…');
     }
   }
 
@@ -312,6 +351,8 @@
 
   function announce(c) {
     if (!unlocked) return;
+    // Layar dengan filter kategori hanya mengumumkan panggilan untuk kategorinya.
+    if (screenCfg && screenCfg.categoryIds.length && !screenCfg.categoryIds.includes(c.categoryId)) return;
     if (settings.sound_enabled !== '0') P.chime();
     if (settings.tts_enabled !== '0') {
       const m = /^([A-Za-z]+)-0*(\d+)$/.exec(c.label || '');
@@ -340,6 +381,7 @@
       case 'content': loadPlaylist(); break;
       case 'categories': loadState(); loadPlaylist(); break;
       case 'settings': loadSettings(); break;
+      case 'screens': loadAll(); break;
     }
   });
 

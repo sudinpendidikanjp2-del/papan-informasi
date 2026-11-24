@@ -19,76 +19,179 @@
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <h1 id="title">Panel Meja Layanan</h1>
-    <div class="row">
-      <select id="counter" style="width:auto;min-width:160px"></select>
-      <button class="btn btn-ghost" id="logout" style="background:#fff">Ganti token</button>
+  <!-- 1. Login -->
+  <div class="login-wrap hidden" id="loginView">
+    <form class="card login-box" id="loginForm" autocomplete="on">
+      <h1>Panel Meja Layanan</h1>
+      <p class="muted">Masuk dengan akun pegawai Anda.</p>
+      <div class="field"><label for="u">Username</label><input id="u" name="username" autocomplete="username" required></div>
+      <div class="field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
+      <div class="err" id="loginErr" role="alert"></div>
+      <button class="btn" type="submit" style="width:100%">Masuk</button>
+    </form>
+  </div>
+
+  <!-- 2. Pilih meja -->
+  <div class="login-wrap hidden" id="pickView">
+    <div class="card login-box">
+      <h1>Pilih meja</h1>
+      <p class="muted" id="pickWho"></p>
+      <div class="pick" id="pickList"></div>
+      <div class="err" id="pickErr" role="alert"></div>
+      <button class="btn btn-ghost" id="pickLogout" style="width:100%">Keluar</button>
     </div>
-  </header>
+  </div>
 
-  <main class="page">
-    <section class="card">
-      <div class="now">
-        <div class="label" id="cur">---</div>
-        <div class="status" id="curStatus">Tidak ada antrian yang dilayani</div>
+  <!-- 3. Panel -->
+  <div class="hidden" id="panelView">
+    <header class="topbar">
+      <div>
+        <h1 id="title">Panel Meja Layanan</h1>
+        <div style="font-size:13px;opacity:.9" id="who"></div>
       </div>
-      <div class="btns">
-        <button class="btn btn-accent wide" id="next">Panggil berikutnya</button>
-        <button class="btn" id="recall">Panggil ulang</button>
-        <button class="btn btn-ghost" id="start">Mulai layani</button>
-        <button class="btn" id="done">Selesai</button>
-        <button class="btn btn-danger" id="skip">Lewati</button>
+      <div class="row">
+        <button class="btn btn-ghost" id="switch" style="background:#fff">Ganti meja</button>
+        <button class="btn btn-accent" id="logout">Keluar</button>
       </div>
-    </section>
+    </header>
 
-    <section class="card" style="margin-top:16px">
-      <div class="stats">
-        <div><b id="waiting">0</b><span>Menunggu di kategori</span></div>
-        <div><b id="served">0</b><span>Meja lain melayani</span></div>
-      </div>
-    </section>
-    <p class="muted" style="font-size:13px;margin-top:12px" id="hint"></p>
-  </main>
+    <main class="page">
+      <section class="card">
+        <div class="now">
+          <div class="label" id="cur">---</div>
+          <div class="status" id="curStatus">Tidak ada antrian yang dilayani</div>
+        </div>
+        <div class="btns">
+          <button class="btn btn-accent wide" id="next">Panggil berikutnya</button>
+          <button class="btn" id="recall">Panggil ulang</button>
+          <button class="btn btn-ghost" id="start">Mulai layani</button>
+          <button class="btn" id="done">Selesai</button>
+          <button class="btn btn-danger" id="skip">Lewati</button>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:16px">
+        <div class="stats">
+          <div><b id="waiting">0</b><span>Menunggu di kategori</span></div>
+          <div><b id="served">0</b><span>Meja lain melayani</span></div>
+        </div>
+      </section>
+      <p class="muted" style="font-size:13px;margin-top:12px" id="hint"></p>
+    </main>
+  </div>
 
   <script src="/js/common.js"></script>
   <script>
     (function () {
       const P = window.Papan;
       const $ = (id) => document.getElementById(id);
-      let state = null;
-      let counterId = null;
+      let user = null;   // hasil /api/auth/me
+      let state = null;  // hasil /api/state
 
-      function ensureToken() {
-        let t = P.store.get(P.TOKEN_KEY);
-        if (!t) {
-          t = prompt('Masukkan token petugas (ADMIN_TOKEN):') || '';
-          if (t) P.store.set(P.TOKEN_KEY, t);
-        }
-        return t;
+      function show(view) {
+        for (const v of ['loginView', 'pickView', 'panelView']) $(v).classList.toggle('hidden', v !== view);
       }
 
+      // Tentukan layar yang tampil dari status sesi.
+      async function route() {
+        try {
+          user = await P.api('/api/auth/me');
+        } catch (e) {
+          user = null;
+          show('loginView');
+          return;
+        }
+        if (!user.counterId) {
+          renderPick();
+          show('pickView');
+          return;
+        }
+        await loadState();
+        show('panelView');
+      }
+
+      // ----- Login -----
+      $('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        $('loginErr').textContent = '';
+        try {
+          await P.api('/api/auth/login', {
+            method: 'POST',
+            body: { username: $('u').value, password: $('p').value },
+          });
+          $('p').value = '';
+          await route();
+        } catch (err) {
+          $('loginErr').textContent = err.message;
+        }
+      });
+
+      async function doLogout() {
+        try {
+          await P.api('/api/auth/logout', { method: 'POST', body: {} });
+          user = null;
+          show('loginView');
+        } catch (err) {
+          P.toast(err.message);
+        }
+      }
+      $('logout').addEventListener('click', doLogout);
+      $('pickLogout').addEventListener('click', doLogout);
+
+      // ----- Pilih meja -----
+      function renderPick() {
+        $('pickWho').textContent = 'Halo, ' + user.name + '. Pilih meja yang akan Anda pakai.';
+        $('pickErr').textContent = '';
+        $('pickList').innerHTML = user.counters.length
+          ? user.counters.map((c) =>
+              '<button class="btn" data-id="' + c.id + '"' + (c.busy ? ' disabled' : '') + '>' +
+              '<span>' + P.esc(c.name) + '<br><small>' + P.esc(c.categoryName || 'Tanpa kategori') + '</small></span>' +
+              '<small>' + (c.busy ? 'Sedang dipakai' : 'Tersedia') + '</small></button>').join('')
+          : '<p class="muted">Belum ada meja yang diizinkan untuk akun Anda. Hubungi admin.</p>';
+      }
+
+      $('pickList').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-id]');
+        if (!btn) return;
+        try {
+          await P.api('/api/auth/counter', { method: 'POST', body: { counterId: Number(btn.dataset.id) } });
+          await route();
+        } catch (err) {
+          $('pickErr').textContent = err.message;
+          await refreshPick();
+        }
+      });
+
+      async function refreshPick() {
+        try {
+          user = await P.api('/api/auth/me');
+          renderPick();
+        } catch { /* sesi habis, ditangani saat route berikutnya */ }
+      }
+
+      $('switch').addEventListener('click', async () => {
+        try {
+          await P.api('/api/auth/counter', { method: 'POST', body: { counterId: null } });
+          await route();
+        } catch (err) {
+          P.toast(err.message);
+        }
+      });
+
+      // ----- Panel -----
       async function loadState() {
         state = await P.api('/api/state');
-        const sel = $('counter');
-        const prev = counterId || P.store.get('papan_counter');
-        sel.innerHTML = state.counters.map((c) =>
-          '<option value="' + c.id + '">' + P.esc(c.name) + (c.categoryName ? ' · ' + P.esc(c.categoryName) : '') + '</option>').join('');
-        if (prev && state.counters.some((c) => String(c.id) === String(prev))) sel.value = prev;
-        counterId = Number(sel.value) || null;
-        if (counterId) P.store.set('papan_counter', counterId);
         render();
       }
 
       function render() {
-        if (!state || !counterId) return;
-        const me = state.counters.find((c) => c.id === counterId);
+        if (!state || !user || !user.counterId) return;
+        const me = state.counters.find((c) => c.id === user.counterId);
         const cur = me && me.current;
         $('cur').textContent = cur ? cur.label : '---';
-        const statusText = cur
+        $('curStatus').textContent = cur
           ? (cur.status === 'serving' ? 'Sedang dilayani' : 'Dipanggil, menunggu pengunjung')
           : 'Tidak ada antrian yang dilayani';
-        $('curStatus').textContent = statusText;
         $('next').disabled = !!cur;
         $('recall').disabled = !cur;
         $('start').disabled = !cur || cur.status !== 'called';
@@ -97,50 +200,34 @@
 
         const cat = me && state.categories.find((k) => k.id === me.categoryId);
         $('waiting').textContent = cat ? cat.waiting : 0;
-        const busyOthers = state.counters.filter((c) => c.id !== counterId && c.current).length;
-        $('served').textContent = busyOthers;
+        $('served').textContent = state.counters.filter((c) => c.id !== user.counterId && c.current).length;
         $('title').textContent = me ? me.name : 'Panel Meja Layanan';
+        $('who').textContent = user.name;
         $('hint').textContent = me && me.categoryName
           ? 'Melayani kategori: ' + me.categoryName + '. Antrian kategori ini dipanggil oleh meja yang sedang kosong.'
           : 'Meja ini belum dipetakan ke kategori. Hubungi admin untuk pemetaan.';
       }
 
       async function act(action) {
-        if (!counterId) return;
         try {
-          await P.api('/api/counter/' + counterId + '/' + action, { method: 'POST', auth: true, body: {} });
+          await P.api('/api/counter/' + user.counterId + '/' + action, { method: 'POST', body: {} });
           await loadState();
         } catch (e) {
-          if (e.status === 401) {
-            P.store.del(P.TOKEN_KEY);
-            P.toast('Token tidak valid. Masukkan ulang.');
-          } else {
-            P.toast(e.message);
-          }
+          if (e.status === 401) return route();
+          P.toast(e.message);
         }
       }
+      for (const a of ['next', 'recall', 'start', 'done', 'skip']) $(a).addEventListener('click', () => act(a));
 
-      $('counter').addEventListener('change', (e) => {
-        counterId = Number(e.target.value);
-        P.store.set('papan_counter', counterId);
-        render();
-      });
-      $('next').addEventListener('click', () => act('next'));
-      $('recall').addEventListener('click', () => act('recall'));
-      $('start').addEventListener('click', () => act('start'));
-      $('done').addEventListener('click', () => act('done'));
-      $('skip').addEventListener('click', () => act('skip'));
-      $('logout').addEventListener('click', () => {
-        P.store.del(P.TOKEN_KEY);
-        ensureToken();
-      });
-
-      ensureToken();
-      loadState().catch((e) => P.toast(e.message));
+      route();
       P.connectWS((msg) => {
-        if (msg.type === 'queue' || msg.type === 'categories') loadState().catch(() => {});
+        if (!user) return;
+        if (user.counterId && (msg.type === 'queue' || msg.type === 'categories')) loadState().catch(() => {});
+        if (!user.counterId && msg.type === 'queue') refreshPick();
       });
-      setInterval(() => loadState().catch(() => {}), 15000);
+      setInterval(() => {
+        if (user && user.counterId) loadState().catch(() => route());
+      }, 15000);
     })();
   </script>
 </body>

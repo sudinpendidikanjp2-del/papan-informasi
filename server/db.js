@@ -60,7 +60,69 @@ CREATE TABLE IF NOT EXISTS tickets (
   UNIQUE (category_id, day, number)
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_queue ON tickets (day, status, category_id);
+
+-- Layar: tiap layar bisa punya playlist dan filter kategori sendiri.
+CREATE TABLE IF NOT EXISTS screens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug         TEXT    NOT NULL UNIQUE,
+  name         TEXT    NOT NULL,
+  idle_minutes INTEGER
+);
+-- Tanpa baris = semua kategori.
+CREATE TABLE IF NOT EXISTS screen_categories (
+  screen_id   INTEGER NOT NULL REFERENCES screens(id)    ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (screen_id, category_id)
+);
+-- Tanpa baris = konten bersama (tampil di semua layar).
+CREATE TABLE IF NOT EXISTS content_screens (
+  content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  screen_id  INTEGER NOT NULL REFERENCES screens(id)  ON DELETE CASCADE,
+  PRIMARY KEY (content_id, screen_id)
+);
+
+-- Pegawai dan sesi login.
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  name          TEXT    NOT NULL,
+  password_hash TEXT    NOT NULL,
+  role          TEXT    NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','staff')),
+  active        INTEGER NOT NULL DEFAULT 1
+);
+-- Meja yang boleh dipakai pegawai.
+CREATE TABLE IF NOT EXISTS user_counters (
+  user_id    INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+  counter_id INTEGER NOT NULL REFERENCES counters(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, counter_id)
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id_hash    TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  counter_id INTEGER REFERENCES counters(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 `);
+
+// Migrasi dari iterasi 1: catat pegawai yang melayani tiap antrian.
+const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
+if (!ticketCols.includes('served_user_id')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+}
+
+// Transaksi sederhana (DatabaseSync tidak punya helper transaction).
+export function tx(fn) {
+  db.exec('BEGIN');
+  try {
+    const r = fn();
+    db.exec('COMMIT');
+    return r;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
 
 const DEFAULT_SETTINGS = {
   org_name: 'Nama Instansi',

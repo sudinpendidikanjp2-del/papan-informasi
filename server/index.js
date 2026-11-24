@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { DATA_DIR, db, getSettings } from './db.js';
 import * as svc from './service.js';
 import { HttpError, bus } from './service.js';
+import * as auth from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -15,12 +16,6 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD = 300 * 1024 * 1024;
-
-let ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
-if (!ADMIN_TOKEN) {
-  ADMIN_TOKEN = crypto.randomBytes(6).toString('hex');
-  console.warn(`[papan] ADMIN_TOKEN belum diset. Token sementara: ${ADMIN_TOKEN}`);
-}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -67,12 +62,33 @@ function readJson(req) {
   });
 }
 
-function requireToken(req) {
-  const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : String(req.headers['x-token'] || '');
-  const a = Buffer.from(token);
-  const b = Buffer.from(ADMIN_TOKEN);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(401, 'Token tidak valid');
+const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https';
+
+function sessionToken(req) {
+  return auth.parseCookies(req.headers.cookie)[auth.COOKIE_NAME] || '';
+}
+
+// Mengembalikan sesi yang valid, atau melempar 401. role 'admin' membatasi ke admin saja.
+function requireSession(req, role = null) {
+  const s = auth.getSession(sessionToken(req));
+  if (!s) throw new HttpError(401, 'Silakan login terlebih dahulu');
+  if (role === 'admin' && s.role !== 'admin') throw new HttpError(403, 'Hanya admin yang boleh mengakses ini');
+  return s;
+}
+
+// Perlindungan CSRF tambahan di atas SameSite=Lax: tolak permintaan yang mengubah data
+// bila header Origin ada tetapi bukan dari host yang sama.
+function checkOrigin(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return;
+  const origin = req.headers.origin;
+  if (!origin) return;
+  let host = '';
+  try {
+    host = new URL(origin).host;
+  } catch {
+    /* origin tidak valid */
+  }
+  if (host !== req.headers.host) throw new HttpError(403, 'Asal permintaan tidak diizinkan');
 }
 
 // ---------- WebSocket ----------
@@ -91,6 +107,7 @@ bus.on('call', (c) => broadcast({ type: 'call', ...c }));
 bus.on('content', () => broadcast({ type: 'content' }));
 bus.on('settings', () => broadcast({ type: 'settings' }));
 bus.on('categories', () => broadcast({ type: 'categories' }));
+bus.on('screens', () => broadcast({ type: 'screens' }));
 
 // ---------- API ----------
 
@@ -98,24 +115,49 @@ async function api(req, res, url) {
   const m = req.method;
   const p = url.pathname;
 
-  // Publik
+  checkOrigin(req);
+
+  // Publik. Parameter ?screen=<slug> memfilter konten dan antrian sesuai pengaturan layar.
+  const screenSlug = url.searchParams.get('screen');
   if (m === 'GET' && p === '/api/time') return send(res, 200, { now: Date.now() });
   if (m === 'GET' && p === '/api/settings') return send(res, 200, getSettings());
-  if (m === 'GET' && p === '/api/state') return send(res, 200, svc.snapshot());
-  if (m === 'GET' && p === '/api/playlist') return send(res, 200, svc.playlist());
+  if (m === 'GET' && p === '/api/state') return send(res, 200, svc.snapshot(screenSlug));
+  if (m === 'GET' && p === '/api/playlist') return send(res, 200, svc.playlist(screenSlug));
   if (m === 'GET' && p === '/api/categories') return send(res, 200, svc.listCategories());
+  const screenMatch = p.match(/^\/api\/screen\/([a-z0-9-]{1,40})$/);
+  if (m === 'GET' && screenMatch) return send(res, 200, svc.screenConfig(screenMatch[1]));
   if (m === 'POST' && p === '/api/tickets') {
     const b = await readJson(req);
     return send(res, 201, svc.createTicket(Number(b.categoryId)));
   }
 
-  // Meja / petugas (butuh token)
+  // Login pegawai
+  if (m === 'POST' && p === '/api/auth/login') {
+    const b = await readJson(req);
+    const r = await auth.login(b.username, b.password, req.socket.remoteAddress || '');
+    res.setHeader('set-cookie', auth.cookieHeader(r.token, isHttps(req)));
+    return send(res, 200, auth.me(auth.getSession(r.token)));
+  }
+  if (m === 'GET' && p === '/api/auth/me') return send(res, 200, auth.me(requireSession(req)));
+  if (m === 'POST' && p === '/api/auth/logout') {
+    const s = auth.getSession(sessionToken(req));
+    if (s) auth.logout(s);
+    res.setHeader('set-cookie', auth.cookieHeader('', isHttps(req)));
+    return send(res, 200, { ok: true });
+  }
+  if (m === 'POST' && p === '/api/auth/counter') {
+    const b = await readJson(req);
+    return send(res, 200, auth.chooseCounter(requireSession(req), b.counterId ?? null));
+  }
+
+  // Meja: pegawai hanya di mejanya sendiri, admin di meja mana pun.
   const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|start|done|skip)$/);
   if (m === 'POST' && counterAction) {
-    requireToken(req);
+    const session = requireSession(req);
     const id = Number(counterAction[1]);
+    auth.assertCounterAccess(session, id);
     const actions = {
-      next: () => svc.callNext(id),
+      next: () => svc.callNext(id, session.userId),
       recall: () => svc.recall(id),
       start: () => svc.startServing(id),
       done: () => svc.finish(id),
@@ -124,16 +166,16 @@ async function api(req, res, url) {
     return send(res, 200, actions[counterAction[2]]());
   }
 
-  // Admin (butuh token)
+  // Admin
   if (p.startsWith('/api/admin/')) {
-    requireToken(req);
-    return adminApi(req, res, url);
+    const session = requireSession(req, 'admin');
+    return adminApi(req, res, url, session);
   }
 
   throw new HttpError(404, 'Tidak ditemukan');
 }
 
-async function adminApi(req, res, url) {
+async function adminApi(req, res, url, session) {
   const m = req.method;
   const p = url.pathname;
   const idOf = (re) => {
@@ -160,6 +202,18 @@ async function adminApi(req, res, url) {
   const ctrId = idOf(/^\/api\/admin\/counters\/(\d+)$/);
   if (ctrId && m === 'PUT') return send(res, 200, svc.saveCounter(ctrId, await readJson(req)));
   if (ctrId && m === 'DELETE') return send(res, 200, svc.deleteCounter(ctrId));
+
+  if (m === 'GET' && p === '/api/admin/screens') return send(res, 200, svc.listScreens());
+  if (m === 'POST' && p === '/api/admin/screens') return send(res, 201, svc.saveScreen(null, await readJson(req)));
+  const scrId = idOf(/^\/api\/admin\/screens\/(\d+)$/);
+  if (scrId && m === 'PUT') return send(res, 200, svc.saveScreen(scrId, await readJson(req)));
+  if (scrId && m === 'DELETE') return send(res, 200, svc.deleteScreen(scrId));
+
+  if (m === 'GET' && p === '/api/admin/users') return send(res, 200, auth.listUsers());
+  if (m === 'POST' && p === '/api/admin/users') return send(res, 201, await auth.saveUser(null, await readJson(req)));
+  const userId = idOf(/^\/api\/admin\/users\/(\d+)$/);
+  if (userId && m === 'PUT') return send(res, 200, await auth.saveUser(userId, await readJson(req)));
+  if (userId && m === 'DELETE') return send(res, 200, auth.deleteUser(userId, session.userId));
 
   if (m === 'PUT' && p === '/api/admin/settings') return send(res, 200, svc.saveSettings(await readJson(req)));
   if (m === 'GET' && p === '/api/admin/report') return send(res, 200, svc.report());
@@ -264,8 +318,8 @@ wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'hello', now: Date.now() }));
 });
 
-// Pembersihan: konfirmasi koneksi DB saat start
 db.prepare('SELECT 1').get();
+await auth.bootstrapAdmin();
 
 server.listen(PORT, () => {
   console.log(`[papan] berjalan di http://localhost:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
