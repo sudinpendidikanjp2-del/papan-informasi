@@ -52,7 +52,7 @@ function counterById(id) {
 function currentFor(counterId) {
   const t = db
     .prepare(
-      `SELECT t.id, t.number, t.status, t.called_at, t.category_id, cat.prefix
+      `SELECT t.id, t.number, t.status, t.called_at, t.category_id, t.priority, cat.prefix
          FROM tickets t JOIN categories cat ON cat.id = t.category_id
         WHERE t.served_by = ? AND t.status IN ('called','serving')
         ORDER BY t.called_at DESC LIMIT 1`
@@ -65,6 +65,7 @@ function currentFor(counterId) {
     status: t.status,
     calledAt: t.called_at,
     categoryId: t.category_id,
+    priority: !!t.priority,
   };
 }
 
@@ -78,23 +79,116 @@ export function listCategories() {
   return db.prepare('SELECT id, name, prefix FROM categories ORDER BY sort, id').all();
 }
 
-export function createTicket(categoryId, counterId = null) {
+// Rata-rata lama layanan hari ini untuk satu kategori (ms), atau null bila belum ada data.
+function avgServiceMs(categoryId, day) {
+  const r = db
+    .prepare(
+      `SELECT AVG(done_at - called_at) AS avg, COUNT(*) AS n FROM tickets
+        WHERE category_id = ? AND day = ? AND status = 'done' AND done_at IS NOT NULL AND called_at IS NOT NULL`
+    )
+    .get(categoryId, day);
+  return r.n > 0 && r.avg > 0 ? r.avg : null;
+}
+
+// Jumlah antrian menunggu yang akan dilayani lebih dulu, dan perkiraan menit tunggu.
+function aheadAndEta(categoryId, day, priority) {
+  const { n: ahead } = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM tickets
+        WHERE category_id = ? AND day = ? AND status = 'waiting' AND priority >= ?`
+    )
+    .get(categoryId, day, priority);
+  const avg = avgServiceMs(categoryId, day);
+  const { n: counters } = db
+    .prepare('SELECT COUNT(*) AS n FROM counters WHERE active = 1 AND category_id = ?')
+    .get(categoryId);
+  const eta = ahead > 0 && avg ? Math.max(1, Math.ceil((ahead * avg) / 60000 / Math.max(1, counters))) : null;
+  return { ahead, etaMinutes: eta };
+}
+
+// opts: { counterId: tujuan khusus meja (atau null), priority: boolean }
+export function createTicket(categoryId, opts = {}) {
+  const counterId = opts.counterId ?? null;
+  const priority = opts.priority ? 1 : 0;
   const cat = categoryById(categoryId);
   if (!cat) throw new HttpError(404, 'Kategori tidak ditemukan');
   const day = today();
+  const { ahead, etaMinutes } = aheadAndEta(cat.id, day, priority);
   const { n } = db
     .prepare('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM tickets WHERE category_id = ? AND day = ?')
     .get(cat.id, day);
   const info = db
-    .prepare('INSERT INTO tickets (category_id, counter_id, number, day, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(cat.id, counterId, n, day, Date.now());
+    .prepare('INSERT INTO tickets (category_id, counter_id, number, day, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(cat.id, counterId, n, day, priority, Date.now());
   touch(cat.id);
   bus.emit('queue');
   return {
     id: Number(info.lastInsertRowid),
     label: labelOf(cat.prefix, n),
     categoryName: cat.name,
+    priority: !!priority,
+    ahead,
+    etaMinutes,
   };
+}
+
+// Operator membuat nomor dari panel mejanya. Tanpa kategori, dipakai kategori meja itu.
+export function createTicketAtCounter(counterId, b) {
+  const c = counterById(counterId);
+  if (!c || !c.active) throw new HttpError(404, 'Meja tidak ditemukan');
+  const categoryId = b.categoryId ? Number(b.categoryId) : c.category_id;
+  if (!categoryId) throw new HttpError(400, 'Pilih kategori untuk nomor ini');
+  return createTicket(categoryId, { counterId: b.dedicated ? c.id : null, priority: !!b.priority });
+}
+
+// Pindahkan antrian yang sedang dipegang sebuah meja ke meja lain. Nomor tetap, kembali menunggu.
+export function transfer(counterId, toCounterId) {
+  const target = counterById(Number(toCounterId));
+  if (!target || !target.active) throw new HttpError(404, 'Meja tujuan tidak ditemukan');
+  if (target.id === counterId) throw new HttpError(400, 'Pilih meja lain sebagai tujuan');
+  const cur = currentFor(counterId);
+  if (!cur) throw new HttpError(404, 'Tidak ada antrian yang bisa dipindahkan');
+  db.prepare(
+    `UPDATE tickets SET status = 'waiting', counter_id = ?, served_by = NULL, served_user_id = NULL,
+            called_at = NULL, transferred_from = ? WHERE id = ?`
+  ).run(target.id, counterId, cur.id);
+  touch(cur.categoryId);
+  bus.emit('queue');
+  return { label: cur.label, to: target.name };
+}
+
+// Riwayat antrian yang dilayani seorang pegawai hari ini.
+export function historyFor(userId) {
+  return db
+    .prepare(
+      `SELECT t.number, t.status, t.called_at AS calledAt, t.done_at AS doneAt, t.priority,
+              cat.prefix, c.name AS counter
+         FROM tickets t
+         JOIN categories cat ON cat.id = t.category_id
+         LEFT JOIN counters c ON c.id = t.served_by
+        WHERE t.day = ? AND t.served_user_id = ?
+        ORDER BY t.called_at DESC LIMIT 50`
+    )
+    .all(today(), userId)
+    .map((r) => ({
+      label: labelOf(r.prefix, r.number),
+      status: r.status,
+      counter: r.counter,
+      priority: !!r.priority,
+      calledAt: r.calledAt,
+      doneAt: r.doneAt,
+    }));
+}
+
+// Antrian yang menunggu khusus untuk satu meja (hasil pindah atau dibuat khusus meja).
+export function dedicatedWaiting(counterId) {
+  return db
+    .prepare(
+      `SELECT t.number, t.priority, cat.prefix FROM tickets t JOIN categories cat ON cat.id = t.category_id
+        WHERE t.status = 'waiting' AND t.day = ? AND t.counter_id = ? ORDER BY t.priority DESC, t.created_at`
+    )
+    .all(today(), counterId)
+    .map((r) => ({ label: labelOf(r.prefix, r.number), priority: !!r.priority }));
 }
 
 // ---------- Antrian: meja / petugas ----------
@@ -121,7 +215,12 @@ export function callNext(counterId, userId = null) {
     "UPDATE tickets SET status = 'called', served_by = ?, served_user_id = ?, called_at = ? WHERE id = ?"
   ).run(c.id, userId, now, t.id);
   touch(t.category_id);
-  const payload = { label: labelOf(t.prefix, t.number), counter: c.name, categoryId: t.category_id };
+  const payload = {
+    label: labelOf(t.prefix, t.number),
+    counter: c.name,
+    categoryId: t.category_id,
+    priority: !!t.priority,
+  };
   bus.emit('queue');
   bus.emit('call', payload);
   return payload;
@@ -236,7 +335,7 @@ export function snapshot(slug = null) {
     )
     .all()
     .filter((c) => inFilter(c.categoryId))
-    .map((c) => ({ ...c, current: currentFor(c.id) }));
+    .map((c) => ({ ...c, current: currentFor(c.id), dedicatedWaiting: dedicatedWaiting(c.id) }));
 
   const categories = db
     .prepare(
@@ -249,7 +348,7 @@ export function snapshot(slug = null) {
 
   const recent = db
     .prepare(
-      `SELECT t.number, t.called_at AS calledAt, t.category_id AS categoryId, cat.prefix, c.name AS counter
+      `SELECT t.number, t.priority, t.called_at AS calledAt, t.category_id AS categoryId, cat.prefix, c.name AS counter
          FROM tickets t
          JOIN categories cat ON cat.id = t.category_id
          LEFT JOIN counters c ON c.id = t.served_by
@@ -259,9 +358,13 @@ export function snapshot(slug = null) {
     .all(day)
     .filter((r) => inFilter(r.categoryId))
     .slice(0, 6)
-    .map((r) => ({ label: labelOf(r.prefix, r.number), counter: r.counter, calledAt: r.calledAt }));
+    .map((r) => ({ label: labelOf(r.prefix, r.number), counter: r.counter, calledAt: r.calledAt, priority: !!r.priority }));
 
-  return { now: Date.now(), lastActivity: activityFor(filter), counters, categories, recent };
+  // Total yang sedang dilayani dan menunggu di layar ini, untuk kartu hero papan.
+  const serving = counters.filter((c) => c.current).length;
+  const waiting = categories.reduce((sum, k) => sum + k.waiting, 0);
+
+  return { now: Date.now(), lastActivity: activityFor(filter), counters, categories, recent, serving, waiting };
 }
 
 // ---------- Konten ----------
@@ -331,6 +434,23 @@ export function updateContent(id, b) {
   });
   bus.emit('content');
   return { ok: true };
+}
+
+// Aksi massal dari bar aksi admin. Mengembalikan nama berkas yang dilepas agar bisa dibersihkan.
+export function bulkContent(b) {
+  const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger))];
+  if (!ids.length) throw new HttpError(400, 'Pilih minimal satu konten');
+  if (!['activate', 'deactivate', 'delete'].includes(b.action)) throw new HttpError(400, 'Aksi tidak dikenal');
+  const marks = ids.map(() => '?').join(',');
+  let files = [];
+  if (b.action === 'delete') {
+    files = db.prepare(`SELECT file FROM contents WHERE id IN (${marks})`).all(...ids).map((r) => r.file).filter(Boolean);
+    db.prepare(`DELETE FROM contents WHERE id IN (${marks})`).run(...ids);
+  } else {
+    db.prepare(`UPDATE contents SET active = ? WHERE id IN (${marks})`).run(b.action === 'activate' ? 1 : 0, ...ids);
+  }
+  bus.emit('content');
+  return { ok: true, count: ids.length, files };
 }
 
 export function deleteContent(id) {
@@ -425,7 +545,10 @@ export function deleteCounter(id) {
 
 // ---------- Pengaturan & laporan ----------
 
-const EDITABLE_SETTINGS = ['org_name', 'org_logo', 'idle_minutes', 'timezone', 'sound_enabled', 'tts_enabled'];
+const EDITABLE_SETTINGS = [
+  'org_name', 'org_logo', 'idle_minutes', 'timezone', 'sound_enabled', 'tts_enabled', 'priority_enabled',
+];
+const BOOLEAN_SETTINGS = new Set(['sound_enabled', 'tts_enabled', 'priority_enabled']);
 
 export function saveSettings(b) {
   for (const k of EDITABLE_SETTINGS) {
@@ -436,13 +559,30 @@ export function saveSettings(b) {
       v = String(Number.isFinite(n) ? Math.max(1, Math.min(120, n)) : 3);
     }
     if (k === 'org_name') v = v.slice(0, 120);
-    if (k === 'sound_enabled' || k === 'tts_enabled') v = v === '0' || v === 'false' ? '0' : '1';
+    if (BOOLEAN_SETTINGS.has(k)) v = v === '0' || v === 'false' ? '0' : '1';
     db.prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
     ).run(k, v);
   }
   bus.emit('settings');
   return { ok: true };
+}
+
+// Angka ringkas untuk kartu KPI di dasbor admin.
+export function summary() {
+  const one = (sql, ...args) => db.prepare(sql).get(...args).n;
+  const day = today();
+  return {
+    contentsActive: one('SELECT COUNT(*) AS n FROM contents WHERE active = 1'),
+    contentsTotal: one('SELECT COUNT(*) AS n FROM contents'),
+    screens: one('SELECT COUNT(*) AS n FROM screens'),
+    staffActive: one("SELECT COUNT(*) AS n FROM users WHERE role = 'staff' AND active = 1"),
+    onlineCounters: one('SELECT COUNT(DISTINCT counter_id) AS n FROM sessions WHERE counter_id IS NOT NULL AND expires_at > ?', Date.now()),
+    countersTotal: one('SELECT COUNT(*) AS n FROM counters WHERE active = 1'),
+    waitingToday: one("SELECT COUNT(*) AS n FROM tickets WHERE day = ? AND status = 'waiting'", day),
+    doneToday: one("SELECT COUNT(*) AS n FROM tickets WHERE day = ? AND status = 'done'", day),
+    ticketsToday: one('SELECT COUNT(*) AS n FROM tickets WHERE day = ?', day),
+  };
 }
 
 export function report() {

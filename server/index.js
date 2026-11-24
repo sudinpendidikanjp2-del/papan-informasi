@@ -1,4 +1,5 @@
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -8,6 +9,7 @@ import { DATA_DIR, db, getSettings } from './db.js';
 import * as svc from './service.js';
 import { HttpError, bus } from './service.js';
 import * as auth from './auth.js';
+import * as media from './media.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -16,6 +18,12 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD = 300 * 1024 * 1024;
+
+// HTTPS bawaan bila TLS_CERT dan TLS_KEY diset. TRUST_PROXY=1 hanya diaktifkan bila server
+// berada di belakang reverse proxy tepercaya (header X-Forwarded-* bisa dipalsukan klien langsung).
+const TLS_CERT = process.env.TLS_CERT || '';
+const TLS_KEY = process.env.TLS_KEY || '';
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -62,7 +70,17 @@ function readJson(req) {
   });
 }
 
-const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https';
+const isHttps = (req) =>
+  !!req.socket.encrypted || (TRUST_PROXY && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https');
+
+// Alamat klien untuk pembatas login. Di belakang proxy tepercaya dipakai X-Forwarded-For (entri pertama).
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (xf) return xf;
+  }
+  return req.socket.remoteAddress || '';
+}
 
 function sessionToken(req) {
   return auth.parseCookies(req.headers.cookie)[auth.COOKIE_NAME] || '';
@@ -128,13 +146,17 @@ async function api(req, res, url) {
   if (m === 'GET' && screenMatch) return send(res, 200, svc.screenConfig(screenMatch[1]));
   if (m === 'POST' && p === '/api/tickets') {
     const b = await readJson(req);
-    return send(res, 201, svc.createTicket(Number(b.categoryId)));
+    // Prioritas dari kiosk publik hanya diterima bila admin mengaktifkannya.
+    if (b.priority && getSettings().priority_enabled !== '1') {
+      throw new HttpError(403, 'Antrian prioritas tidak tersedia di kiosk ini');
+    }
+    return send(res, 201, svc.createTicket(Number(b.categoryId), { priority: !!b.priority }));
   }
 
   // Login pegawai
   if (m === 'POST' && p === '/api/auth/login') {
     const b = await readJson(req);
-    const r = await auth.login(b.username, b.password, req.socket.remoteAddress || '');
+    const r = await auth.login(b.username, b.password, clientIp(req));
     res.setHeader('set-cookie', auth.cookieHeader(r.token, isHttps(req)));
     return send(res, 200, auth.me(auth.getSession(r.token)));
   }
@@ -150,12 +172,18 @@ async function api(req, res, url) {
     return send(res, 200, auth.chooseCounter(requireSession(req), b.counterId ?? null));
   }
 
+  // Riwayat pegawai yang sedang login (hari ini).
+  if (m === 'GET' && p === '/api/auth/history') return send(res, 200, svc.historyFor(requireSession(req).userId));
+
   // Meja: pegawai hanya di mejanya sendiri, admin di meja mana pun.
-  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|start|done|skip)$/);
+  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|start|done|skip|ticket|transfer)$/);
   if (m === 'POST' && counterAction) {
     const session = requireSession(req);
     const id = Number(counterAction[1]);
     auth.assertCounterAccess(session, id);
+    const action = counterAction[2];
+    if (action === 'ticket') return send(res, 201, svc.createTicketAtCounter(id, await readJson(req)));
+    if (action === 'transfer') return send(res, 200, svc.transfer(id, (await readJson(req)).toCounterId));
     const actions = {
       next: () => svc.callNext(id, session.userId),
       recall: () => svc.recall(id),
@@ -163,7 +191,7 @@ async function api(req, res, url) {
       done: () => svc.finish(id),
       skip: () => svc.skip(id),
     };
-    return send(res, 200, actions[counterAction[2]]());
+    return send(res, 200, actions[action]());
   }
 
   // Admin
@@ -183,13 +211,40 @@ async function adminApi(req, res, url, session) {
     return r ? Number(r[1]) : null;
   };
 
-  if (m === 'GET' && p === '/api/admin/content') return send(res, 200, svc.listContents());
-  if (m === 'POST' && p === '/api/admin/content') return send(res, 201, svc.createContent(await readJson(req)));
-  const cid = idOf(/^\/api\/admin\/content\/(\d+)$/);
-  if (cid && m === 'PUT') return send(res, 200, svc.updateContent(cid, await readJson(req)));
-  if (cid && m === 'DELETE') return send(res, 200, svc.deleteContent(cid));
+  if (m === 'GET' && p === '/api/admin/summary') {
+    return send(res, 200, { ...svc.summary(), ffmpeg: media.ffmpegAvailable });
+  }
 
-  if (m === 'POST' && p === '/api/admin/upload') return send(res, 201, await handleUpload(req, url));
+  if (m === 'GET' && p === '/api/admin/content') return send(res, 200, svc.listContents());
+  if (m === 'POST' && p === '/api/admin/content') {
+    const b = await readJson(req);
+    media.assertReady(UPLOAD_DIR, b.file);
+    return send(res, 201, svc.createContent(b));
+  }
+  const cid = idOf(/^\/api\/admin\/content\/(\d+)$/);
+  if (cid && m === 'PUT') {
+    const b = await readJson(req);
+    media.assertReady(UPLOAD_DIR, b.file);
+    const old = db.prepare('SELECT file FROM contents WHERE id = ?').get(cid);
+    const r = svc.updateContent(cid, b);
+    if (old && old.file !== b.file) dropIfUnused(old.file);
+    return send(res, 200, r);
+  }
+  if (cid && m === 'DELETE') {
+    const old = db.prepare('SELECT file FROM contents WHERE id = ?').get(cid);
+    const r = svc.deleteContent(cid);
+    if (old) dropIfUnused(old.file);
+    return send(res, 200, r);
+  }
+  // Operasi massal dari bar aksi: { ids: [..], action: 'activate' | 'deactivate' | 'delete' }
+  if (m === 'POST' && p === '/api/admin/content/bulk') return send(res, 200, bulkContent(await readJson(req)));
+
+  if (m === 'POST' && p === '/api/admin/upload') {
+    const r = await handleUpload(req, url);
+    return send(res, r.status === 'processing' ? 202 : 201, r);
+  }
+  const upStatus = p.match(/^\/api\/admin\/upload\/([a-f0-9]{20}\.[a-z0-9]{2,4})\/status$/);
+  if (m === 'GET' && upStatus) return send(res, 200, media.status(UPLOAD_DIR, upStatus[1]));
 
   if (m === 'GET' && p === '/api/admin/categories') return send(res, 200, svc.listAdminCategories());
   if (m === 'POST' && p === '/api/admin/categories') return send(res, 201, svc.saveCategory(null, await readJson(req)));
@@ -215,23 +270,55 @@ async function adminApi(req, res, url, session) {
   if (userId && m === 'PUT') return send(res, 200, await auth.saveUser(userId, await readJson(req)));
   if (userId && m === 'DELETE') return send(res, 200, auth.deleteUser(userId, session.userId));
 
-  if (m === 'PUT' && p === '/api/admin/settings') return send(res, 200, svc.saveSettings(await readJson(req)));
+  if (m === 'PUT' && p === '/api/admin/settings') {
+    const oldLogo = getSettings().org_logo;
+    const r = svc.saveSettings(await readJson(req));
+    if (oldLogo && oldLogo !== getSettings().org_logo) dropIfUnused(path.basename(oldLogo));
+    return send(res, 200, r);
+  }
   if (m === 'GET' && p === '/api/admin/report') return send(res, 200, svc.report());
 
   throw new HttpError(404, 'Tidak ditemukan');
 }
 
+function decodeURIComponentSafe(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+function bulkContent(b) {
+  const r = svc.bulkContent(b);
+  for (const f of r.files) dropIfUnused(f);
+  return { ok: true, count: r.count };
+}
+
+// Hapus berkas unggahan bila tidak lagi dirujuk konten mana pun maupun logo.
+function dropIfUnused(name) {
+  if (!name) return;
+  const safe = path.basename(name);
+  const inUse = db.prepare('SELECT 1 FROM contents WHERE file = ?').get(safe) || path.basename(getSettings().org_logo || '') === safe;
+  if (!inUse) fs.unlink(path.join(UPLOAD_DIR, safe), () => {});
+}
+
 // Unggah file mentah: header x-filename berisi nama asli. Disimpan dengan nama acak.
+// Video diubah ke MP4 H.264 oleh ffmpeg (bila tersedia); responsnya status 'processing' dan
+// klien memantau lewat /api/admin/upload/:file/status.
 function handleUpload(req, url) {
   return new Promise((resolve, reject) => {
-    const original = String(req.headers['x-filename'] || url.searchParams.get('name') || 'file');
+    const original = decodeURIComponentSafe(String(req.headers['x-filename'] || url.searchParams.get('name') || 'file'));
     const ext = path.extname(original).toLowerCase();
     if (!UPLOAD_EXT.has(ext)) {
       req.resume();
       return reject(new HttpError(400, 'Format file tidak didukung'));
     }
-    const name = crypto.randomBytes(10).toString('hex') + ext;
-    const dest = path.join(UPLOAD_DIR, name);
+    const id = crypto.randomBytes(10).toString('hex');
+    const transcode = media.VIDEO_EXT.has(ext) && media.ffmpegAvailable;
+    // Hasil transcoding selalu .mp4; sumbernya disimpan sementara sebagai <id>.src<ext>.
+    const name = id + (transcode ? '.mp4' : ext);
+    const dest = path.join(UPLOAD_DIR, transcode ? `${id}.src${ext}` : name);
     const out = fs.createWriteStream(dest);
     let size = 0;
     let failed = false;
@@ -248,7 +335,13 @@ function handleUpload(req, url) {
     });
     req.pipe(out);
     out.on('finish', () => {
-      if (!failed) resolve({ file: name, url: `/uploads/${name}`, size });
+      if (failed) return;
+      if (transcode) {
+        media.enqueueTranscode(dest, path.join(UPLOAD_DIR, name), name);
+        return resolve({ file: name, url: `/uploads/${name}`, size, status: 'processing' });
+      }
+      const warning = media.VIDEO_EXT.has(ext) ? 'ffmpeg tidak tersedia: video disimpan apa adanya, tanpa konversi' : undefined;
+      resolve({ file: name, url: `/uploads/${name}`, size, status: 'ready', warning });
     });
     out.on('error', fail);
     req.on('error', fail);
@@ -296,7 +389,7 @@ function serveFile(req, res, filePath, root) {
 
 // ---------- Server ----------
 
-const server = http.createServer(async (req, res) => {
+async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
@@ -311,7 +404,18 @@ const server = http.createServer(async (req, res) => {
     if (res.headersSent) return res.end();
     send(res, code, { error: err instanceof HttpError ? err.message : 'Terjadi kesalahan pada server' });
   }
-});
+}
+
+// HTTPS bawaan bila sertifikat dan kunci diberikan; kegagalan membaca berkas menghentikan server
+// agar tidak diam-diam berjalan tanpa enkripsi.
+let server;
+if (TLS_CERT || TLS_KEY) {
+  if (!TLS_CERT || !TLS_KEY) throw new Error('TLS_CERT dan TLS_KEY harus diisi bersamaan');
+  server = https.createServer({ cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) }, handler);
+} else {
+  server = http.createServer(handler);
+}
+const SCHEME = TLS_CERT ? 'https' : 'http';
 
 wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (ws) => {
@@ -321,6 +425,21 @@ wss.on('connection', (ws) => {
 db.prepare('SELECT 1').get();
 await auth.bootstrapAdmin();
 
+// Bersihkan berkas unggahan yang tidak dirujuk: saat start, lalu tiap jam.
+const sweep = () => {
+  try {
+    const n = media.cleanupUploads(UPLOAD_DIR);
+    if (n) console.log(`[papan] ${n} berkas unggahan yatim dihapus`);
+  } catch (e) {
+    console.error('[papan] pembersihan unggahan gagal:', e.message);
+  }
+};
+sweep();
+setInterval(sweep, 60 * 60 * 1000).unref();
+
+if (!media.ffmpegAvailable) console.warn('[papan] ffmpeg tidak ditemukan: video tidak akan dikonversi.');
+if (TRUST_PROXY) console.log('[papan] TRUST_PROXY aktif: header X-Forwarded-* dipercaya.');
+
 server.listen(PORT, () => {
-  console.log(`[papan] berjalan di http://localhost:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
+  console.log(`[papan] berjalan di ${SCHEME}://localhost:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
 });

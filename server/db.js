@@ -10,6 +10,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 export const db = new DatabaseSync(path.join(DATA_DIR, 'papan.db'));
 
 db.exec(`
+PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -110,6 +111,10 @@ const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.n
 if (!ticketCols.includes('served_user_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
 }
+// Iterasi 3: meja asal saat antrian dipindahkan.
+if (!ticketCols.includes('transferred_from')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN transferred_from INTEGER REFERENCES counters(id) ON DELETE SET NULL');
+}
 
 // Transaksi sederhana (DatabaseSync tidak punya helper transaction).
 export function tx(fn) {
@@ -131,6 +136,8 @@ const DEFAULT_SETTINGS = {
   timezone: 'Asia/Jakarta',
   sound_enabled: '1',
   tts_enabled: '1',
+  // Kiosk publik bisa disalahgunakan, jadi tombol prioritas mati secara bawaan.
+  priority_enabled: '0',
 };
 
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
