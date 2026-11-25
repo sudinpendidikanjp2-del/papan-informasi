@@ -1,0 +1,104 @@
+name: Rilis
+
+# Publikasi image Docker ke GHCR. Setiap push ke main dites, tetapi image hanya dipublikasikan
+# bila pesan commit memuat "rilis baru" (mis. judul PR yang di-merge). Versi diambil dari package.json.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: rilis-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tes sebelum rilis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  publish:
+    name: Publikasi image ke GHCR
+    needs: test
+    # contains() tidak peka huruf besar-kecil.
+    if: contains(github.event.head_commit.message, 'rilis baru')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tentukan versi dan nama image
+        id: info
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          OWNER="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$OWNER/papan-informasi" >> "$GITHUB_OUTPUT"
+
+      - name: Pastikan versi belum pernah dirilis
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION sudah ada. Naikkan \"version\" di package.json sebelum merilis lagi."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label dan tag image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.info.outputs.image }}
+          tags: |
+            type=raw,value=${{ steps.info.outputs.version }}
+            type=raw,value=latest
+            type=sha,prefix=sha-,format=short
+
+      - name: Build dan push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Buat tag dan GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.info.outputs.version }}
+          IMAGE: ${{ steps.info.outputs.image }}
+        run: |
+          {
+            echo "Image Docker:"
+            echo
+            echo '```'
+            echo "docker pull $IMAGE:$VERSION"
+            echo '```'
+          } > notes.md
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" \
+            --generate-notes --notes-file notes.md

@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Run lama pada cabang yang sama dibatalkan saat ada push baru.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tes (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines mensyaratkan Node >= 22.13. Node 24 memberi tahu lebih awal bila node:sqlite berubah perilaku.
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Pasang ffmpeg (agar tes konversi video ikut berjalan)
+        # ffmpeg bersifat opsional (tes video dilewati bila tidak ada), jadi hambatan mirror apt tidak boleh
+        # menggantung seluruh job: batas waktu langkah, percobaan ulang, dan lanjut bila gagal.
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      - name: Unit dan integrasi
+        run: npm test
+      - name: Audit dependensi produksi
+        run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Pasang ffmpeg
+        # ffmpeg bersifat opsional (tes video dilewati bila tidak ada), jadi hambatan mirror apt tidak boleh
+        # menggantung seluruh job: batas waktu langkah, percobaan ulang, dan lanjut bila gagal.
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      # Playwright dipasang tanpa mengubah package.json/package-lock.json (--no-save).
+      - name: Pasang Playwright dan Chromium
+        run: |
+          npm install --no-save playwright@1.57.0
+          npx playwright install --with-deps chromium
+      - name: Jalankan e2e
+        run: npm run test:e2e
+      - name: Salin tangkapan layar
+        if: always()
+        run: |
+          mkdir -p e2e-screenshots
+          cp -r /tmp/papan-e2e-*/screenshots/. e2e-screenshots/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    name: Docker (build dan uji asap)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versi Docker
+        run: docker version && docker compose version
+      # Jalur sebenarnya: apt (ffmpeg, tar, ca-certificates), build, dan compose yang membangun sendiri.
+      - name: Build dan uji asap
+        env:
+          COMPOSE_BUILD: '1'
+        run: test/docker-smoke.sh

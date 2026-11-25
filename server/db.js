@@ -10,6 +10,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 export const db = new DatabaseSync(path.join(DATA_DIR, 'papan.db'));
 
 db.exec(`
+PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -60,7 +61,109 @@ CREATE TABLE IF NOT EXISTS tickets (
   UNIQUE (category_id, day, number)
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_queue ON tickets (day, status, category_id);
+
+-- Layar: tiap layar bisa punya playlist dan filter kategori sendiri.
+CREATE TABLE IF NOT EXISTS screens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug         TEXT    NOT NULL UNIQUE,
+  name         TEXT    NOT NULL,
+  idle_minutes INTEGER
+);
+-- Tanpa baris = semua kategori.
+CREATE TABLE IF NOT EXISTS screen_categories (
+  screen_id   INTEGER NOT NULL REFERENCES screens(id)    ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (screen_id, category_id)
+);
+-- Tanpa baris = konten bersama (tampil di semua layar).
+CREATE TABLE IF NOT EXISTS content_screens (
+  content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  screen_id  INTEGER NOT NULL REFERENCES screens(id)  ON DELETE CASCADE,
+  PRIMARY KEY (content_id, screen_id)
+);
+
+-- Rahasia server (mis. kunci VAPID). Tabel terpisah dari settings agar tidak ikut terkirim
+-- lewat /api/settings yang publik.
+CREATE TABLE IF NOT EXISTS secrets (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Langganan notifikasi push milik pengunjung, terikat pada satu tiket.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id     INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  endpoint      TEXT    NOT NULL UNIQUE,
+  p256dh        TEXT    NOT NULL,
+  auth          TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL,
+  notified_near INTEGER NOT NULL DEFAULT 0
+);
+
+-- Pembatas percobaan login (bertahan saat server dimulai ulang).
+CREATE TABLE IF NOT EXISTS login_attempts (
+  key        TEXT PRIMARY KEY,
+  count      INTEGER NOT NULL DEFAULT 0,
+  until      INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+-- Pegawai dan sesi login.
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  name          TEXT    NOT NULL,
+  password_hash TEXT    NOT NULL,
+  role          TEXT    NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','staff')),
+  active        INTEGER NOT NULL DEFAULT 1
+);
+-- Meja yang boleh dipakai pegawai.
+CREATE TABLE IF NOT EXISTS user_counters (
+  user_id    INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+  counter_id INTEGER NOT NULL REFERENCES counters(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, counter_id)
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id_hash    TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  counter_id INTEGER REFERENCES counters(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 `);
+
+// Migrasi dari iterasi 1: catat pegawai yang melayani tiap antrian.
+const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
+if (!ticketCols.includes('served_user_id')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+}
+// Iterasi 3: meja asal saat antrian dipindahkan.
+if (!ticketCols.includes('transferred_from')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN transferred_from INTEGER REFERENCES counters(id) ON DELETE SET NULL');
+}
+
+// Iterasi 4: token acak per tiket untuk halaman pantau di ponsel pengunjung.
+if (!ticketCols.includes('token')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN token TEXT');
+}
+// Iterasi 5: nomor sebelumnya saat antrian dipindahkan ke kategori lain.
+if (!ticketCols.includes('prev_label')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN prev_label TEXT');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_token ON tickets (token) WHERE token IS NOT NULL');
+
+// Transaksi sederhana (DatabaseSync tidak punya helper transaction).
+export function tx(fn) {
+  db.exec('BEGIN');
+  try {
+    const r = fn();
+    db.exec('COMMIT');
+    return r;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
 
 const DEFAULT_SETTINGS = {
   org_name: 'Nama Instansi',
@@ -69,7 +172,33 @@ const DEFAULT_SETTINGS = {
   timezone: 'Asia/Jakarta',
   sound_enabled: '1',
   tts_enabled: '1',
+  // Kiosk publik bisa disalahgunakan, jadi tombol prioritas mati secara bawaan.
+  priority_enabled: '0',
+  // Notifikasi pengunjung: alamat dasar untuk QR (kosong = ikut alamat yang dipakai kiosk),
+  // batas "hampir giliran", dan saklar notifikasi push.
+  public_base_url: '',
+  notify_ahead: '3',
+  push_enabled: '1',
 };
+
+// Untuk /healthz: apakah database masih bisa dibaca.
+export function dbOk() {
+  try {
+    db.prepare('SELECT 1').get();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getSecret(key) {
+  const r = db.prepare('SELECT value FROM secrets WHERE key = ?').get(key);
+  return r ? r.value : null;
+}
+
+export function setSecret(key, value) {
+  db.prepare('INSERT INTO secrets (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
 
 const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v);

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Pantau Antrian</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .wrap { max-width: 480px; margin: 0 auto; padding: 16px 16px 40px; display: grid; gap: 14px; }
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
+    .bar .nm { font-weight: 700; line-height: 1.15; }
+    .bar .sb { font-size: 13px; color: var(--muted); }
+    .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+    .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .live.off i { background: var(--red); }
+
+    .hero { padding: 22px 20px; }
+    .hero .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hero .big { font-size: clamp(72px, 24vw, 112px); margin: 8px 0 4px; }
+    .hero .cat { font-size: 16px; font-weight: 500; opacity: .96; }
+    .hero .hero-stats { grid-template-columns: 1fr 1fr; margin-top: 18px; }
+    .hero .hero-stat { flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px; }
+    .hero .hero-stat .k { font-size: 13px; }
+    .hero .hero-stat .v { font-size: 26px; }
+    .hero .hero-pill.y { background: var(--yellow); color: var(--ink); font-weight: 700; }
+    .hero.called { animation: glow 1.4s ease infinite; }
+    @keyframes glow { 0%,100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 8px rgba(255,197,46,.65), var(--shadow); } }
+    .hero.called .where { font-size: 24px; font-weight: 700; margin-top: 10px; }
+    .hero.finished { background: linear-gradient(135deg, #5b6b87, #3c4a63); }
+    .bigmsg { font-size: 22px; font-weight: 700; line-height: 1.25; margin: 12px 0 6px; }
+
+    .card h2 { font-size: 16px; margin-bottom: 10px; }
+    .state { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; padding: 8px 0; border-top: 1px solid var(--line); }
+    .state:first-of-type { border-top: 0; }
+    .state .ic { margin-top: 2px; }
+    .state.on .ic { color: var(--green); }
+    .state.off .ic { color: var(--muted); }
+    .state .t { font-weight: 600; }
+    .state .d { color: var(--muted); font-size: 13px; }
+    .foot { text-align: center; font-size: 12.5px; color: var(--muted); }
+    .center { text-align: center; padding: 28px 20px; }
+    .center .ic { width: 40px; height: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app">
+    <div class="bar">
+      <div><div class="nm" id="org">Pantau Antrian</div><div class="sb">Status antrian Anda</div></div>
+      <span class="live" id="live"><i></i><span>Langsung</span></span>
+    </div>
+
+    <div id="missing" class="card center hidden">
+      <div id="missIc"></div>
+      <div class="bigmsg" id="missTitle">Tiket tidak ditemukan</div>
+      <p class="muted" id="missText" style="margin:0">Pindai ulang kode QR pada slip antrian Anda.</p>
+    </div>
+
+    <div id="ticket" class="hidden" style="display:grid;gap:14px">
+      <section class="hero" id="hero">
+        <div class="head"><span class="eyebrow">Nomor antrian Anda</span><span class="hero-pill" id="pill"></span></div>
+        <div class="big num" id="label"></div>
+        <div class="cat" id="cat"></div>
+        <div id="callBox" class="where hidden"></div>
+        <div class="hero-stats" id="stats">
+          <div class="hero-stat"><span class="k">Orang di depan Anda</span><span class="v num" id="ahead">-</span></div>
+          <div class="hero-stat"><span class="k">Perkiraan tunggu</span><span class="v num" id="eta">-</span></div>
+        </div>
+        <div id="finishBox" class="hidden"></div>
+      </section>
+
+      <div class="banner info hidden" id="movedBanner"><span id="movedIc"></span><span id="movedText"></span></div>
+
+      <div class="banner hidden" id="nearBanner"><span id="nearIc"></span><span><b>Giliran Anda hampir tiba.</b> Mohon bersiap menuju loket.</span></div>
+
+      <section class="card" id="alerts">
+        <h2>Peringatan</h2>
+        <div id="alertStates"></div>
+        <button class="btn" id="enable" style="width:100%;margin-top:10px"></button>
+        <p class="hint" id="alertHint" style="margin:10px 0 0"></p>
+      </section>
+    </div>
+
+    <div class="foot">Halaman ini diperbarui otomatis. Jangan tutup bila ingin mendapat peringatan suara dan getar.</div>
+  </div>
+
+  <script src="/js/icons.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/track.js"></script>
+</body>
+</html>

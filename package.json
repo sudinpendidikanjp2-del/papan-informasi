@@ -6,12 +6,21 @@
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "postinstall": "node scripts/copy-vendor.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "test:slow": "SLOW_TESTS=1 node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "test:e2e": "node --disable-warning=ExperimentalWarning test/e2e/run.mjs"
   },
   "engines": {
     "node": ">=22.13"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "pdfjs-dist": "4.10.38",
+    "qrcode-generator": "1.4.4",
+    "web-push": "3.6.7",
+    "ws": "8.23.0"
   }
 }

@@ -6,142 +6,186 @@
   <title>Panel Meja Layanan</title>
   <link rel="stylesheet" href="/css/app.css">
   <style>
-    body { background: var(--bg); }
-    .now { text-align: center; padding: 22px 12px; }
-    .now .label { font-size: clamp(56px, 16vw, 112px); font-weight: 800; color: var(--blue); line-height: 1; font-variant-numeric: tabular-nums; }
-    .now .status { color: var(--muted); font-weight: 600; margin-top: 8px; }
-    .btns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-    .btns .btn { padding: 18px; font-size: 17px; }
-    .btns .wide { grid-column: 1 / -1; }
-    .stats { display: flex; justify-content: space-around; text-align: center; gap: 8px; }
-    .stats b { display: block; font-size: 28px; color: var(--blue); font-variant-numeric: tabular-nums; }
-    .stats span { font-size: 13px; color: var(--muted); }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px 104px; }
+    .top { position: sticky; top: 0; z-index: 20; background: rgba(244,247,252,.92); backdrop-filter: blur(8px); padding: 14px 0 12px; }
+    .top .row { justify-content: space-between; flex-wrap: nowrap; }
+    .me { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .me .n { font-weight: 700; line-height: 1.15; }
+    .me .s { font-size: 13px; color: var(--muted); }
+    .stack { display: grid; gap: 14px; }
+
+    .hero .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .hero .big { font-size: clamp(64px, 20vw, 104px); margin: 4px 0 6px; }
+    .hero .big.idle { opacity: .75; }
+    .hero .sub { font-size: 16px; font-weight: 500; opacity: .96; }
+    .hero .hero-stats { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+    .hero .hero-stat { flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px; }
+    .hero .hero-stat .k { font-size: 13px; }
+    .hero .hero-stat .v { font-size: 26px; }
+    .hero .hero-pill.y { background: var(--yellow); color: var(--ink); font-weight: 700; }
+
+    .actions { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+    .actions .btn { padding: 15px 12px; font-size: 16px; }
+    .actions .wide { grid-column: 1 / -1; padding: 18px; font-size: 18px; }
+
+    .queued { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .xfer { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+
+    .item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .item:last-child { border-bottom: 0; }
+    .item .lb { font-weight: 800; font-size: 20px; color: var(--blue-700); font-variant-numeric: tabular-nums; }
+    .item .meta { font-size: 13px; color: var(--muted); }
+
+    .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+    .nav .in { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .nav button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; justify-items: center; gap: 3px; padding: 8px 4px; border-radius: 12px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+    .nav button .ic { width: 22px; height: 22px; }
+    .nav button.on { color: var(--blue-600); background: var(--blue-50); }
+    .nav button:focus-visible { outline: 2px solid var(--blue); }
+    .tabpane.hidden { display: none; }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <h1 id="title">Panel Meja Layanan</h1>
-    <div class="row">
-      <select id="counter" style="width:auto;min-width:160px"></select>
-      <button class="btn btn-ghost" id="logout" style="background:#fff">Ganti token</button>
+  <!-- 1. Login -->
+  <div class="login-wrap hidden" id="loginView">
+    <form class="card login-box" id="loginForm" autocomplete="on">
+      <div class="logo" id="loginLogo"></div>
+      <h1>Panel Meja Layanan</h1>
+      <p class="muted">Masuk dengan akun pegawai Anda.</p>
+      <div class="field"><label for="u">Username</label><input id="u" name="username" autocomplete="username" required></div>
+      <div class="field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
+      <div class="err" id="loginErr" role="alert"></div>
+      <button class="btn" type="submit" style="width:100%">Masuk</button>
+    </form>
+  </div>
+
+  <!-- 2. Pilih meja -->
+  <div class="login-wrap hidden" id="pickView">
+    <div class="card login-box">
+      <h1>Pilih meja</h1>
+      <p class="muted" id="pickWho"></p>
+      <div class="stack" id="pickList"></div>
+      <div class="err" id="pickErr" role="alert"></div>
+      <button class="btn btn-ghost" id="pickLogout" style="width:100%">Keluar</button>
     </div>
-  </header>
+  </div>
 
-  <main class="page">
-    <section class="card">
-      <div class="now">
-        <div class="label" id="cur">---</div>
-        <div class="status" id="curStatus">Tidak ada antrian yang dilayani</div>
-      </div>
-      <div class="btns">
-        <button class="btn btn-accent wide" id="next">Panggil berikutnya</button>
-        <button class="btn" id="recall">Panggil ulang</button>
-        <button class="btn btn-ghost" id="start">Mulai layani</button>
-        <button class="btn" id="done">Selesai</button>
-        <button class="btn btn-danger" id="skip">Lewati</button>
-      </div>
-    </section>
+  <!-- 3. Panel -->
+  <div class="hidden" id="panelView">
+    <div class="wrap">
+      <header class="top">
+        <div class="row">
+          <div class="me">
+            <span class="avatar" id="meAv">?</span>
+            <div style="min-width:0"><div class="n" id="meName"></div><div class="s" id="meCounter"></div></div>
+          </div>
+          <div class="row" style="flex-wrap:nowrap">
+            <button class="btn btn-ghost btn-sm" id="switch" title="Ganti meja"></button>
+            <button class="btn btn-dark btn-sm" id="logout" title="Keluar"></button>
+          </div>
+        </div>
+      </header>
 
-    <section class="card" style="margin-top:16px">
-      <div class="stats">
-        <div><b id="waiting">0</b><span>Menunggu di kategori</span></div>
-        <div><b id="served">0</b><span>Meja lain melayani</span></div>
-      </div>
-    </section>
-    <p class="muted" style="font-size:13px;margin-top:12px" id="hint"></p>
-  </main>
+      <!-- Tab Panel -->
+      <section class="tabpane stack" id="pane-panel">
+        <div class="hero">
+          <div class="head">
+            <span class="eyebrow">Nomor saat ini</span>
+            <span class="hero-pill" id="curPill"></span>
+          </div>
+          <div class="big num" id="cur">&mdash;</div>
+          <div class="sub" id="curSub">Belum ada antrian yang dilayani</div>
+          <div class="hero-stats">
+            <div class="hero-stat"><span class="k">Menunggu di kategori</span><span class="v" id="waiting">0</span></div>
+            <div class="hero-stat"><span class="k">Khusus meja ini</span><span class="v" id="dedicated">0</span></div>
+          </div>
+        </div>
 
+        <div class="card">
+          <div class="actions">
+            <button class="btn btn-accent wide" id="next"></button>
+            <button class="btn" id="recall"></button>
+            <button class="btn btn-ghost" id="start"></button>
+            <button class="btn" id="done"></button>
+            <button class="btn btn-danger" id="skip"></button>
+          </div>
+          <div class="queued" id="queued"></div>
+        </div>
+
+        <div class="card hidden" id="xferCard">
+          <div class="card-title">Pindahkan antrian</div>
+          <div class="tabs-u" id="xferMode" role="tablist" style="margin-bottom:14px">
+            <button role="tab" class="on" data-m="counter" aria-selected="true">Ke meja lain</button>
+            <button role="tab" data-m="category" aria-selected="false">Ke kategori lain</button>
+          </div>
+          <div id="xferCounter">
+            <div class="xfer">
+              <select id="xferTo" aria-label="Meja tujuan"></select>
+              <button class="btn btn-ghost" id="xferBtn"></button>
+            </div>
+            <p class="hint" style="margin:8px 0 0">Nomor tetap sama dan kembali menunggu khusus untuk meja tujuan.</p>
+          </div>
+          <div id="xferCategory" class="hidden">
+            <div class="xfer">
+              <select id="xferCat" aria-label="Kategori tujuan"></select>
+              <button class="btn btn-ghost" id="xferCatBtn"></button>
+            </div>
+            <label class="switch" style="margin-top:6px">
+              <span><div class="t">Dahulukan</div><div class="d">Beri prioritas di kategori tujuan</div></span>
+              <input type="checkbox" id="xferPrio"><span class="track"></span>
+            </label>
+            <p class="hint" style="margin:6px 0 0" id="xferCatHint"></p>
+          </div>
+        </div>
+        <p class="hint" id="hint"></p>
+      </section>
+
+      <!-- Tab Buat nomor -->
+      <section class="tabpane stack hidden" id="pane-new">
+        <form class="card" id="newForm">
+          <div class="card-title">Buat nomor antrian</div>
+          <div class="field"><label for="newCat">Kategori layanan</label><select id="newCat"></select></div>
+          <label class="switch">
+            <span><div class="t">Prioritas</div><div class="d">Lansia, ibu hamil, penyandang disabilitas</div></span>
+            <input type="checkbox" id="newPrio"><span class="track"></span>
+          </label>
+          <label class="switch">
+            <span><div class="t">Khusus meja ini</div><div class="d">Hanya meja ini yang bisa memanggilnya</div></span>
+            <input type="checkbox" id="newDed"><span class="track"></span>
+          </label>
+          <button class="btn btn-lg" type="submit" style="width:100%;margin-top:14px" id="newBtn"></button>
+        </form>
+        <div class="hero hidden" id="newResult">
+          <div class="head"><span class="eyebrow">Nomor baru</span><span class="hero-pill y hidden" id="nrPrio"></span></div>
+          <div class="big num" id="nrNum" style="font-size:72px"></div>
+          <div class="sub" id="nrCat"></div>
+          <div class="hero-stats">
+            <div class="hero-stat"><span class="k">Orang di depan</span><span class="v" id="nrAhead">0</span></div>
+            <div class="hero-stat"><span class="k">Perkiraan tunggu</span><span class="v" id="nrEta">-</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab Riwayat -->
+      <section class="tabpane stack hidden" id="pane-hist">
+        <div class="card">
+          <div class="card-title">Riwayat hari ini <span class="pill" id="histCount">0</span></div>
+          <div id="histList"></div>
+        </div>
+      </section>
+    </div>
+
+    <nav class="nav" aria-label="Menu panel">
+      <div class="in">
+        <button class="on" data-tab="panel" id="nav-panel"></button>
+        <button data-tab="new" id="nav-new"></button>
+        <button data-tab="hist" id="nav-hist"></button>
+      </div>
+    </nav>
+  </div>
+
+  <script src="/js/icons.js"></script>
   <script src="/js/common.js"></script>
-  <script>
-    (function () {
-      const P = window.Papan;
-      const $ = (id) => document.getElementById(id);
-      let state = null;
-      let counterId = null;
-
-      function ensureToken() {
-        let t = P.store.get(P.TOKEN_KEY);
-        if (!t) {
-          t = prompt('Masukkan token petugas (ADMIN_TOKEN):') || '';
-          if (t) P.store.set(P.TOKEN_KEY, t);
-        }
-        return t;
-      }
-
-      async function loadState() {
-        state = await P.api('/api/state');
-        const sel = $('counter');
-        const prev = counterId || P.store.get('papan_counter');
-        sel.innerHTML = state.counters.map((c) =>
-          '<option value="' + c.id + '">' + P.esc(c.name) + (c.categoryName ? ' · ' + P.esc(c.categoryName) : '') + '</option>').join('');
-        if (prev && state.counters.some((c) => String(c.id) === String(prev))) sel.value = prev;
-        counterId = Number(sel.value) || null;
-        if (counterId) P.store.set('papan_counter', counterId);
-        render();
-      }
-
-      function render() {
-        if (!state || !counterId) return;
-        const me = state.counters.find((c) => c.id === counterId);
-        const cur = me && me.current;
-        $('cur').textContent = cur ? cur.label : '---';
-        const statusText = cur
-          ? (cur.status === 'serving' ? 'Sedang dilayani' : 'Dipanggil, menunggu pengunjung')
-          : 'Tidak ada antrian yang dilayani';
-        $('curStatus').textContent = statusText;
-        $('next').disabled = !!cur;
-        $('recall').disabled = !cur;
-        $('start').disabled = !cur || cur.status !== 'called';
-        $('done').disabled = !cur;
-        $('skip').disabled = !cur;
-
-        const cat = me && state.categories.find((k) => k.id === me.categoryId);
-        $('waiting').textContent = cat ? cat.waiting : 0;
-        const busyOthers = state.counters.filter((c) => c.id !== counterId && c.current).length;
-        $('served').textContent = busyOthers;
-        $('title').textContent = me ? me.name : 'Panel Meja Layanan';
-        $('hint').textContent = me && me.categoryName
-          ? 'Melayani kategori: ' + me.categoryName + '. Antrian kategori ini dipanggil oleh meja yang sedang kosong.'
-          : 'Meja ini belum dipetakan ke kategori. Hubungi admin untuk pemetaan.';
-      }
-
-      async function act(action) {
-        if (!counterId) return;
-        try {
-          await P.api('/api/counter/' + counterId + '/' + action, { method: 'POST', auth: true, body: {} });
-          await loadState();
-        } catch (e) {
-          if (e.status === 401) {
-            P.store.del(P.TOKEN_KEY);
-            P.toast('Token tidak valid. Masukkan ulang.');
-          } else {
-            P.toast(e.message);
-          }
-        }
-      }
-
-      $('counter').addEventListener('change', (e) => {
-        counterId = Number(e.target.value);
-        P.store.set('papan_counter', counterId);
-        render();
-      });
-      $('next').addEventListener('click', () => act('next'));
-      $('recall').addEventListener('click', () => act('recall'));
-      $('start').addEventListener('click', () => act('start'));
-      $('done').addEventListener('click', () => act('done'));
-      $('skip').addEventListener('click', () => act('skip'));
-      $('logout').addEventListener('click', () => {
-        P.store.del(P.TOKEN_KEY);
-        ensureToken();
-      });
-
-      ensureToken();
-      loadState().catch((e) => P.toast(e.message));
-      P.connectWS((msg) => {
-        if (msg.type === 'queue' || msg.type === 'categories') loadState().catch(() => {});
-      });
-      setInterval(() => loadState().catch(() => {}), 15000);
-    })();
-  </script>
+  <script src="/js/operator.js"></script>
 </body>
 </html>

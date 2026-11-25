@@ -1,0 +1,11 @@
+[Unit]
+Description=Jadwal backup harian Papan Informasi
+
+[Timer]
+# Dini hari, di luar jam layanan. Persistent: bila mesin mati saat jadwalnya, backup dijalankan saat menyala lagi.
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
