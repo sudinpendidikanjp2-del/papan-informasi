@@ -26,9 +26,14 @@ COPY public ./public
 # Direktori data dibuat dan dimiliki pengguna "node" sebelum dideklarasikan sebagai volume,
 # supaya volume bernama baru bisa ditulis tanpa root.
 RUN mkdir -p /data && chown -R node:node /data /app/public/vendor
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000
 VOLUME ["/data"]
-USER node
+# Tanpa "USER node": entrypoint dimulai sebagai root hanya untuk memperbaiki pemilik /data (bind mount atau
+# volume platform), lalu menurunkan hak ke pengguna node. Server tetap berjalan non-root.
+# Dengan "docker run --user 1000" entrypoint langsung menjalankan server tanpa chown.
+ENTRYPOINT ["docker-entrypoint.sh"]
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

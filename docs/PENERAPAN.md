@@ -87,7 +87,8 @@ Atau pakai image siap pakai dari GHCR (lihat bagian Rilis di README): `export PA
 docker compose ps                 # kolom STATUS harus "healthy" setelah sekitar 15 detik
 ```
 
-- Data ada di volume Docker `papan-data` (`/data` di dalam container). `HOST` dan `DATA_DIR` di `.env` diabaikan karena compose menimpanya.
+- Data ada di volume Docker `papan-data` (`/data` di dalam container).
+- **Izin direktori data.** Image dimulai sebagai root hanya untuk entrypoint: bila `/data` (bind mount seperti `./data:/data`, atau volume buatan platform deploy) tidak dimiliki pengguna `node` (uid 1000), pemiliknya diperbaiki otomatis, lalu server berjalan sebagai uid 1000 (bukan root). Bila Anda memaksa `user: "1000:1000"` / `--user`, entrypoint tidak bisa memperbaiki apa pun: beri pemilik folder itu uid tersebut (`sudo chown -R 1000:1000 <folder>`). Galat `unable to open database file` atau pesan "Tidak dapat memakai direktori data" berarti direktori itu tidak dapat ditulis. `HOST` dan `DATA_DIR` di `.env` diabaikan karena compose menimpanya.
 - Port dipublikasikan hanya ke `127.0.0.1:3000`. Pasang reverse proxy (bagian 4) di mesin yang sama, atau ubah `ports` menjadi `"3000:3000"` untuk membukanya ke jaringan (tanpa HTTPS).
 - Backup di Docker: `docker compose exec papan node scripts/backup.js --out /data/backups` (arsip ikut berada di volume; salin keluar secara berkala), atau jalankan skrip backup dari host terhadap folder volume.
 - Restore menolak berjalan bila server hidup, tetapi tidak bisa melihat proses di dalam container. Hentikan dulu (`docker compose stop papan`) lalu jalankan restore dengan `--force`.

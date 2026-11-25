@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Uji asap image Docker dan docker-compose: build, isi image, siklus hidup container, izin volume, penutupan
-# anggun, persistensi, backup/restore di dalam container, dan compose. Dipakai oleh CI dan bisa dijalankan lokal:
+# anggun, persistensi, backup/restore di dalam container, compose, bind mount milik root, dan --user tanpa izin tulis. Dipakai oleh CI dan bisa dijalankan lokal:
 #
 #   test/docker-smoke.sh
 #
@@ -41,6 +41,8 @@ has()  { case " $APT_PACKAGES " in *" $1 "*) return 0;; *) return 1;; esac; }
 
 cleanup() {
   set +e
+  # Isi bind mount dimiliki uid node; hapus lewat container supaya berhasil walau skrip tidak berjalan sebagai root.
+  [ -d "$TMP/bind" ] && docker run --rm --entrypoint sh -v "$TMP/bind:/d" "$IMAGE" -c 'rm -rf /d/* /d/.[!.]*' >/dev/null 2>&1
   docker rm -f "$NAME" "$NAME-2" "$NAME-3" >/dev/null 2>&1
   docker volume rm -f "$VOLUME" >/dev/null 2>&1
   docker compose -p "$PROJECT" ${COMPOSE_FILES:+$COMPOSE_FILES} down -v >/dev/null 2>&1
@@ -87,7 +89,8 @@ echo "  info ukuran image: $((SIZE/1024/1024)) MB"
 # ---------------------------------------------------------------- 2. isi image
 step "2. Isi image"
 in_image() { docker run --rm --entrypoint sh "$IMAGE" -c "$1" 2>/dev/null; }
-UID_IN=$(in_image 'id -u'); [ "$UID_IN" != 0 ] && pass "berjalan sebagai non-root (uid $UID_IN)" || fail "berjalan sebagai root"
+# Entrypoint dimulai sebagai root hanya untuk memperbaiki pemilik /data, lalu menurunkan hak: perintah apa pun dijalankan sebagai node.
+UID_IN=$(docker run --rm "$IMAGE" id -u 2>/dev/null || echo ?); [ "$UID_IN" != 0 ] && [ "$UID_IN" != ? ] && pass "perintah berjalan sebagai non-root (uid $UID_IN)" || fail "berjalan sebagai root atau gagal ($UID_IN)"
 ok "pdf.js tersedia di public/vendor" "$(in_image 'test -f /app/public/vendor/pdfjs/pdf.min.mjs && echo ya || echo tidak')" ya
 ok "tar tersedia" "$(in_image 'command -v tar >/dev/null && echo ya || echo tidak')" ya
 ok "tidak ada .git, data, atau test di image" "$(in_image 'ls -A /app | grep -c -x -e .git -e data -e test -e docs -e deploy || true')" 0
@@ -185,6 +188,42 @@ T0=$(date +%s%N); dc stop -t 15 >/dev/null 2>&1; MS=$(( ($(date +%s%N)-T0)/10000
 [ "$MS" -lt 10000 ] && pass "compose stop dalam ${MS} ms" || fail "compose stop lambat: ${MS} ms"
 dc logs 2>&1 | grep -q 'berhenti dengan bersih' && pass "compose: penutupan bersih tercatat" || fail "compose: log penutupan tidak ada"
 dc down -v >/dev/null 2>&1
+
+# ---------------------------------------------------------------- 10. bind mount milik root
+step "10. Bind mount milik root (platform deploy): entrypoint memperbaiki pemilik lalu menurunkan hak"
+mkdir -p "$TMP/bind"; chmod 755 "$TMP/bind"
+BIND_OWNER_BEFORE=$(stat -c %u "$TMP/bind")
+echo "  info pemilik bind mount sebelum start: uid $BIND_OWNER_BEFORE"
+docker run -d --name "$NAME-2" "${RUN_NET[@]}" -v "$TMP/bind:/data" \
+  --health-interval 2s --health-start-period 1s --health-retries 15 \
+  -e ADMIN_PASSWORD="$PASS_ADMIN" "$IMAGE" >/dev/null
+if wait_healthy "$NAME-2" 60; then pass "container sehat di atas bind mount yang bukan milik node"; else fail "container tidak sehat di atas bind mount"; docker logs "$NAME-2" 2>&1 | tail -15; fi
+ok "server berjalan sebagai uid 1000 (bukan root)" "$(docker exec "$NAME-2" awk '/^Uid:/{print $2}' /proc/1/status)" 1000
+ok "database di bind mount dimiliki uid 1000" "$(docker exec "$NAME-2" stat -c %u /data/papan.db)" 1000
+docker logs "$NAME-2" 2>&1 | grep -q 'memperbaiki pemilik' && pass "entrypoint mencatat perbaikan pemilik" || fail "log perbaikan pemilik tidak ada"
+ok "login admin di bind mount" "$(login "$TMP/jb" admin "$PASS_ADMIN")" 200
+docker stop -t 15 "$NAME-2" >/dev/null
+ok "bind mount: kode keluar 0 saat docker stop" "$(docker inspect --format '{{.State.ExitCode}}' "$NAME-2")" 0
+docker rm "$NAME-2" >/dev/null
+# Start ulang di folder yang sama: tidak perlu chown lagi, data tetap ada.
+docker run -d --name "$NAME-2" "${RUN_NET[@]}" -v "$TMP/bind:/data" \
+  --health-interval 2s --health-start-period 1s --health-retries 15 \
+  -e ADMIN_PASSWORD="$PASS_ADMIN" "$IMAGE" >/dev/null
+wait_healthy "$NAME-2" 60 && pass "start ulang di bind mount yang sama sehat" || fail "start ulang gagal"
+ok "login admin tetap berlaku setelah start ulang" "$(login "$TMP/jb" admin "$PASS_ADMIN")" 200
+N_FIX=$(docker logs "$NAME-2" 2>&1 | grep -c 'memperbaiki pemilik' || true)
+[ "$N_FIX" = 0 ] && pass "tidak ada chown ulang pada start kedua" || fail "chown terulang ($N_FIX)"
+docker rm -f "$NAME-2" >/dev/null
+
+# ---------------------------------------------------------------- 11. --user pada folder tak bisa ditulis
+step "11. --user 1000 pada folder yang tidak bisa ditulis: pesan galat jelas"
+mkdir -p "$TMP/ro"; chmod 555 "$TMP/ro"
+set +e
+RO_OUT=$(docker run --rm --name "$NAME-3" --user 1000:1000 -v "$TMP/ro:/data" -e ADMIN_PASSWORD="$PASS_ADMIN" "$IMAGE" 2>&1); RO_CODE=$?
+set -e
+ok "keluar dengan kode 1" "$RO_CODE" 1
+echo "$RO_OUT" | grep -q 'Tidak dapat memakai direktori data' && pass "pesan galat menjelaskan masalahnya" || fail "pesan galat tidak muncul: $(echo "$RO_OUT" | head -3)"
+echo "$RO_OUT" | grep -q 'ERR_SQLITE_ERROR' && fail "tumpukan galat SQLite masih muncul" || pass "tanpa tumpukan galat SQLite"
 
 echo
 echo "== Ringkasan: $PASSED lolos, $FAILED gagal, $SKIPPED dilewati"
