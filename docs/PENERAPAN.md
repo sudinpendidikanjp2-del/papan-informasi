@@ -79,6 +79,11 @@ git clone https://github.com/sudinpendidikanjp2-del/papan-informasi && cd papan-
 cp deploy/papan-informasi.env.example .env
 nano .env                         # ganti ADMIN_PASSWORD
 docker compose up -d --build
+```
+
+Atau pakai image siap pakai dari GHCR (lihat bagian Rilis di README): `PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:<versi> docker compose up -d`.
+
+```bash
 docker compose ps                 # kolom STATUS harus "healthy" setelah sekitar 15 detik
 ```
 

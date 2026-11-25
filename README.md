@@ -172,6 +172,18 @@ npm run test:e2e     # e2e Playwright di browser sungguhan (butuh Playwright dan
 
 **CI** (`.github/workflows/ci.yml`) menjalankan `npm test` di Node 22 dan 24 beserta `npm audit`, e2e Playwright, dan uji Docker pada setiap push dan pull request.
 
+
+## Rilis
+
+Push ke `main` menjalankan `.github/workflows/release.yml`: tes dulu, lalu **image Docker dipublikasikan ke GHCR hanya bila pesan commit memuat "rilis baru"** (tidak peka huruf besar-kecil; untuk PR, tulis di judul PR atau judul merge). Naikkan `version` di `package.json` sebelum merilis; bila tag `vX.Y.Z` sudah ada, rilis ditolak agar image lama tidak tertimpa. Hasilnya: image `ghcr.io/<pemilik>/papan-informasi` dengan tag versi, `latest`, dan `sha-<commit>`, plus GitHub Release.
+
+```bash
+docker pull ghcr.io/<pemilik>/papan-informasi:latest
+PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:latest docker compose up -d
+```
+
+Paket GHCR baru bersifat privat; ubah visibilitasnya di pengaturan paket di GitHub bila ingin dapat ditarik tanpa login.
+
 ## Struktur
 
 ```
