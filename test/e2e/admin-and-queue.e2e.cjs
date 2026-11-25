@@ -28,6 +28,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   await a.waitForSelector('#shell:visible');
   ok(true, 'admin: login');
   ok(await a.isHidden('#crumbRoot'), 'admin: breadcrumb dasbor tidak berulang');
+  await a.waitForFunction(() => document.getElementById('kpis').textContent.includes('Konten aktif'), null, { timeout: 10000 }).catch(() => {});
   ok((await txt(a, '#kpis')).includes('Konten aktif'), 'admin: kartu KPI tampil');
 
   // --- Pengaturan: nama, prioritas kiosk
