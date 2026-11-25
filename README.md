@@ -179,7 +179,8 @@ Push ke `main` menjalankan `.github/workflows/release.yml`: tes dulu, lalu **ima
 
 ```bash
 docker pull ghcr.io/<pemilik>/papan-informasi:latest
-PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:latest docker compose up -d
+export PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:latest
+docker compose pull papan && docker compose up -d --no-build
 ```
 
 Paket GHCR baru bersifat privat; ubah visibilitasnya di pengaturan paket di GitHub bila ingin dapat ditarik tanpa login.

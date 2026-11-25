@@ -81,7 +81,7 @@ nano .env                         # ganti ADMIN_PASSWORD
 docker compose up -d --build
 ```
 
-Atau pakai image siap pakai dari GHCR (lihat bagian Rilis di README): `PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:<versi> docker compose up -d`.
+Atau pakai image siap pakai dari GHCR (lihat bagian Rilis di README): `export PAPAN_IMAGE=ghcr.io/<pemilik>/papan-informasi:<versi>`, lalu `docker compose pull papan && docker compose up -d --no-build`.
 
 ```bash
 docker compose ps                 # kolom STATUS harus "healthy" setelah sekitar 15 detik
