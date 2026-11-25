@@ -175,7 +175,7 @@ npm run test:e2e     # e2e Playwright di browser sungguhan (butuh Playwright dan
 
 ## Rilis
 
-Push ke `main` menjalankan `.github/workflows/release.yml`: tes dulu, lalu **image Docker dipublikasikan ke GHCR hanya bila pesan commit memuat "rilis baru"** (tidak peka huruf besar-kecil; untuk PR, tulis di judul PR atau judul merge). Naikkan `version` di `package.json` sebelum merilis; bila tag `vX.Y.Z` sudah ada, rilis ditolak agar image lama tidak tertimpa. Hasilnya: image `ghcr.io/<pemilik>/papan-informasi` dengan tag versi, `latest`, dan `sha-<commit>`, plus GitHub Release.
+Push ke `main` menjalankan `.github/workflows/release.yml`: tes dulu, lalu **image Docker dipublikasikan ke GHCR hanya bila pesan commit memuat "rilis baru"** (tidak peka huruf besar-kecil). Pada merge commit hanya **judul PR** (atau judul yang Anda ketik saat merge) yang masuk ke pesan, jadi frasa itu harus ada di sana. Alternatifnya, jalankan manual tanpa frasa apa pun: tab Actions → Rilis → *Run workflow* (branch `main`). Naikkan `version` di `package.json` sebelum merilis; bila tag `vX.Y.Z` sudah ada, rilis ditolak agar image lama tidak tertimpa. Hasilnya: image `ghcr.io/<pemilik>/papan-informasi` dengan tag versi, `latest`, dan `sha-<commit>`, plus GitHub Release.
 
 ```bash
 docker pull ghcr.io/<pemilik>/papan-informasi:latest

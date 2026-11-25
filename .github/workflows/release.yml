@@ -1,10 +1,13 @@
 name: Rilis
 
 # Publikasi image Docker ke GHCR. Setiap push ke main dites, tetapi image hanya dipublikasikan
-# bila pesan commit memuat "rilis baru" (mis. judul PR yang di-merge). Versi diambil dari package.json.
+# bila pesan commit memuat "rilis baru" (mis. judul PR yang di-merge) atau workflow dijalankan manual.
+# Versi diambil dari package.json.
 on:
   push:
     branches: [main]
+  # Rilis manual: tab Actions > Rilis > Run workflow (pilih branch main). Tidak butuh frasa di pesan commit.
+  workflow_dispatch:
 
 concurrency:
   group: rilis-${{ github.ref }}
@@ -30,8 +33,8 @@ jobs:
   publish:
     name: Publikasi image ke GHCR
     needs: test
-    # contains() tidak peka huruf besar-kecil.
-    if: contains(github.event.head_commit.message, 'rilis baru')
+    # contains() tidak peka huruf besar-kecil. Pada merge commit hanya judul PR yang masuk ke pesan.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'rilis baru')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
