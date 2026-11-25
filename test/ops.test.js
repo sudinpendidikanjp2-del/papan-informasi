@@ -74,10 +74,14 @@ describe('penutupan anggun', () => {
     assert.equal(r.status, 202);
     const up = path.join(srv.dataDir, 'uploads');
     await waitFor(() => fs.readdirSync(up).some((f) => f.endsWith('.part.mp4')), 10000, 'konversi mulai');
+    // Hanya ffmpeg milik server ini yang diperiksa (pgrep global ikut menangkap ffmpeg tes lain yang berjalan paralel).
+    const kids = spawnSync('pgrep', ['-x', '-P', String(srv.child.pid), 'ffmpeg'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+    assert.ok(kids.length >= 1, 'ffmpeg anak server sedang berjalan sebelum SIGTERM');
     const code = await srv.stop('SIGTERM');
     assert.equal(code, 0);
     assert.deepEqual(fs.readdirSync(up).filter((f) => /\.part|\.src\./.test(f)), []);
-    assert.equal(spawnSync('pgrep', ['-x', 'ffmpeg']).status, 1, 'tidak ada ffmpeg yatim');
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    assert.deepEqual(kids.filter(alive), [], 'tidak ada ffmpeg yatim');
     rm(srv.dataDir); rm(d);
   });
 
