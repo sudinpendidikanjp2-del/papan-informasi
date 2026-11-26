@@ -107,6 +107,8 @@ Notifikasi push dan layanan pantau yang aman membutuhkan HTTPS. Pilih salah satu
 
 Setelah HTTPS aktif, isi **Alamat dasar untuk kode QR** di Pengaturan dengan alamat yang dipakai pengunjung (mis. `https://antrian.instansi.go.id`), supaya QR di kiosk mengarah ke alamat yang benar.
 
+> **Konten YouTube dan CSP.** Jenis konten YouTube butuh internet di perangkat papan dan membuat CSP mengizinkan skrip dari `www.youtube.com`, iframe dari `youtube-nocookie.com`/`youtube.com`, dan gambar dari `i.ytimg.com`. Jika tidak memakainya, set `YOUTUBE=off` di berkas lingkungan: CSP kembali ke `'self'` saja dan server menolak konten YouTube. Pemutaran YouTube sungguhan belum diuji di lingkungan pengembangan (hanya dengan IFrame API tiruan); coba di perangkat Anda.
+
 ## 5. Memasang layar kiosk
 
 Satu perangkat per layar. Langkah untuk Raspberry Pi OS atau Ubuntu desktop:
@@ -128,6 +130,8 @@ Skrip membuka kembali browser bila tertutup, menonaktifkan penghemat layar (X11)
 **Suara.** Browser menahan audio sampai ada interaksi pengguna. Parameter `sound=on` pada alamat menyembunyikan overlay "Aktifkan" dan skrip kiosk menjalankan Chromium dengan `--autoplay-policy=no-user-gesture-required` agar bel dan suara panggilan langsung berbunyi. **Bagian ini belum teruji di perangkat nyata** (peramban headless di lingkungan pengembangan tidak menegakkan kebijakan autoplay). Bila bel atau suara tidak keluar, hapus `&sound=on` dari alamat, mulai ulang, dan ketuk tombol **Aktifkan** sekali. Suara pembacaan nomor (TTS) juga bergantung pada adanya suara bahasa Indonesia di perangkat; bunyi bel tidak.
 
 Layar sentuh kiosk pengambilan nomor memakai alamat `https://.../kiosk` dengan cara yang sama (tanpa `sound=on`).
+
+**Layar papan informasi saja (sentuh/kursor).** Matikan sakelar *Tampilkan antrian di layar ini* pada layar itu di halaman **Layar**. Alamatnya sama (`/layar/<slug>`), tetapi tanpa antrian dan tanpa suara (jadi `sound=on` tidak diperlukan). Cocok untuk layar sentuh atau perangkat dengan mouse: gerakan kursor/sentuhan memunculkan daftar informasi di kiri dan menjeda tayangan; setelah diam selama waktu *lanjut otomatis* tayangan berlanjut. Screensaver hilang begitu ada gerakan.
 
 ## 6. Backup dan pemulihan
 

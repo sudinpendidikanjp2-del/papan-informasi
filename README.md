@@ -32,6 +32,7 @@ Lalu buka `http://localhost:3000/admin` dan masuk dengan akun tersebut.
 | `TRUST_PROXY` | `1` bila di belakang reverse proxy tepercaya (lihat bagian HTTPS) |
 | `HOST` | Antarmuka yang didengarkan, mis. `127.0.0.1` di belakang reverse proxy (default: semua) |
 | `TICKET_RATE` | Batas pengambilan nomor per alamat per menit di kiosk (default 30) |
+| `YOUTUBE` | `off` mematikan jenis konten YouTube dan mengembalikan CSP ke `'self'` saja (default `on`) |
 | `WS_MAX_PER_IP` | Batas koneksi WebSocket per alamat (default 100) |
 | `VAPID_SUBJECT` | Subjek VAPID untuk notifikasi push (`mailto:` atau `https:`), opsional |
 
@@ -55,6 +56,7 @@ Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi
 - **Kategori**: layar hanya menampilkan antrian, meja, dan panggilan untuk kategori yang dipilih. Kosong berarti semua kategori.
 - **Konten**: tiap item konten bisa ditujukan ke layar tertentu. Item tanpa tujuan menjadi konten bersama yang tampil di semua layar.
 - **Screensaver**: waktu idle bisa diatur per layar. Idle dihitung dari aktivitas antrian pada kategori layar itu saja.
+- **Mode layar**: sakelar *Tampilkan antrian di layar ini*. Dimatikan, layar menjadi **papan informasi saja**: panggung penuh tanpa kartu antrian, meja, panggilan, bel, atau suara. Pengunjung yang menggerakkan kursor atau menyentuh layar melihat **daftar informasi di sisi kiri**; selama itu durasi tayang **dimatikan sementara** (penghitung menunjukkan "Dijeda"), mengklik judul melompat ke informasi itu (PDF punya tombol halaman sebelumnya/berikutnya), dan setelah tidak ada gerakan selama *lanjut otomatis* (default 20 detik, 5-600) daftar menutup dan tayangan lanjut dengan durasi penuh.
 - Alamat `/` tanpa parameter menampilkan semua antrian dan **hanya** konten bersama.
 - Slug yang belum didaftarkan tetap menampilkan konten bersama, disertai peringatan di layar.
 
@@ -100,10 +102,14 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 
 ## Konten & screensaver
 
-- Jenis konten: **teks**, **gambar**, **video**, **PDF**. Setiap item tampil selama durasi yang diatur, lalu berganti otomatis. Pil hitung mundur tampil di pojok, dan penanda progres bersegmen di bawahnya menunjukkan posisi dalam playlist.
+- Jenis konten: **teks**, **gambar**, **video**, **PDF**, dan **YouTube**. Setiap item tampil selama durasi yang diatur, lalu berganti otomatis. Pil hitung mundur tampil di pojok, dan penanda progres bersegmen di bawahnya menunjukkan posisi dalam playlist.
 - **Video**: durasi 0 berarti tayang sampai video selesai. Bila `ffmpeg` tersedia, video yang diunggah dikonversi ke MP4 H.264/AAC (tinggi maks 1080, `faststart`) agar terputar di browser layar mana pun. Konversi berjalan satu per satu di latar belakang; tombol Simpan aktif setelah selesai. Tanpa `ffmpeg`, video disimpan apa adanya dan dasbor menampilkan peringatan.
+- **YouTube**: tempel tautan video (`youtube.com/watch?v=`, `youtu.be/`, `shorts/`, `embed/`). Diputar lewat IFrame API (host `youtube-nocookie.com`), **dibisukan dan tanpa kontrol**; item berganti saat video selesai, dan durasi menjadi batas maksimum (0 = sampai selesai). Butuh internet di perangkat papan; bila pemutar tidak termuat atau video tidak bisa disematkan, item dilewati. CSP hanya dilonggarkan untuk host YouTube (`YOUTUBE=off` mematikannya). Tidak bisa dipakai sebagai screensaver.
+- **Teks (markdown)**: isi teks ditulis dengan editor Tiptap (judul, tebal, miring, daftar, kutipan, garis) dan disimpan sebagai **markdown**. Berkas `.md` dapat diimpor (seret ke kotak impor; heading pertama menjadi judul bila judul kosong) dan teks markdown yang ditempel otomatis diformat. Di papan hasilnya disanitasi (HTML mentah, tautan, dan gambar dibuang) dan teks panjang diperkecil agar muat.
+- **Urutan tayang**: seret ikon di kiri baris (atau panah atas/bawah pada ikon yang difokuskan) di tab *Semua*; urutan langsung tersimpan.
+- **Unggah**: area seret-lepas (*dropzone*) untuk berkas konten, logo, dan markdown, dengan bilah progres unggah (persen, kecepatan, sisa waktu) dan **persen konversi video** yang dibaca dari ffmpeg.
 - **PDF**: tampil per halaman (pdf.js). Durasi berarti **detik per halaman**. Bila pdf.js gagal dimuat, dokumen tampil lewat penampil bawaan browser selama satu kali durasi.
-- Screensaver berjalan saat tidak ada aktivitas antrian selama waktu *idle* yang diatur. Screensaver memakai item yang ditandai "screensaver" (gambar atau video).
+- Screensaver berjalan saat tidak ada aktivitas antrian **dan** tidak ada gerakan kursor, sentuhan, atau tombol selama waktu *idle* yang diatur; ia **hilang begitu kursor digerakkan** atau layar disentuh. Screensaver memakai item yang ditandai "screensaver" (gambar atau video).
 - Berkas unggahan yang tidak lagi dipakai dihapus otomatis (saat konten dihapus atau diganti, dan penyapuan tiap jam untuk berkas yatim yang berumur lebih dari satu jam).
 - Admin dapat memilih beberapa konten sekaligus untuk diaktifkan, dinonaktifkan, atau dihapus lewat bar aksi massal.
 

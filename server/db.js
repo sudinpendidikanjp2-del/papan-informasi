@@ -187,6 +187,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 // Panggil = melayani: status 'called' (alur dua langkah lama) digabung ke 'serving'. Aman diulang.
 db.exec("UPDATE tickets SET status = 'serving' WHERE status = 'called'");
 
+// Mode layar: show_queue = 0 berarti layar hanya papan informasi (tanpa antrian) yang interaktif;
+// resume_seconds = jeda tanpa gerakan sebelum tayangan dilanjutkan (kosong = bawaan 20 detik).
+{
+  const screenCols = db.prepare('PRAGMA table_info(screens)').all().map((c) => c.name);
+  if (!screenCols.includes('show_queue')) db.exec('ALTER TABLE screens ADD COLUMN show_queue INTEGER NOT NULL DEFAULT 1');
+  if (!screenCols.includes('resume_seconds')) db.exec('ALTER TABLE screens ADD COLUMN resume_seconds INTEGER');
+}
+
 const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
 if (!ticketCols.includes('served_user_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');

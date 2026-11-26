@@ -147,7 +147,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th>Layar</th><th>Alamat</th><th>Kategori</th><th>Idle</th><th></th></tr></thead>
+              <thead><tr><th>Layar</th><th>Alamat</th><th>Mode</th><th>Kategori</th><th>Idle</th><th></th></tr></thead>
               <tbody id="screenRows"></tbody>
             </table>
           </div>
@@ -308,9 +308,11 @@
       <form id="screenForm" class="hidden">
         <input type="hidden" name="id">
         <div class="field"><label>Nama layar</label><input name="name" maxlength="80" required placeholder="Lobi utama"></div>
-        <div class="field"><label>Slug</label><input name="slug" maxlength="40" required pattern="[a-z0-9\-]{1,40}" placeholder="lobi"><span class="hint">Huruf kecil, angka, dan tanda hubung. Alamat layar: /?screen=slug</span></div>
+        <div class="field"><label>Slug</label><input name="slug" maxlength="40" required pattern="[a-z0-9\-]{1,40}" placeholder="lobi"><span class="hint">Huruf kecil, angka, dan tanda hubung. Alamat layar: /layar/slug</span></div>
         <div class="field"><label>Idle sebelum screensaver (menit)</label><input name="idleMinutes" type="number" min="1" max="120" placeholder="Ikut pengaturan umum"></div>
-        <div class="field"><label>Kategori yang ditampilkan <span class="muted" style="font-weight:400">(kosongkan semua = semua)</span></label><div class="checks" id="screenCats"></div></div>
+        <label class="switch"><span><div class="t">Tampilkan antrian di layar ini</div><div class="d">Matikan agar layar hanya menjadi papan informasi: tanpa nomor antrian dan suara, pengunjung bisa memilih informasi dengan menggerakkan kursor atau menyentuh layar.</div></span><input type="checkbox" name="showQueue" id="showQueue" checked><span class="track"></span></label>
+        <div class="field" id="resumeField"><label>Lanjut otomatis setelah (detik tanpa gerakan)</label><input name="resumeSeconds" type="number" min="5" max="600" placeholder="20"><span class="hint">Selama pengunjung menggerakkan kursor atau menyentuh layar, durasi tayang dihentikan sementara. Bila diam selama ini, tayangan dilanjutkan.</span></div>
+        <div class="field" id="screenCatsField"><label>Kategori yang ditampilkan <span class="muted" style="font-weight:400">(kosongkan semua = semua)</span></label><div class="checks" id="screenCats"></div></div>
         <div class="dfoot"><button class="btn btn-ghost" type="button" data-close>Batal</button><button class="btn" type="submit">Simpan</button></div>
       </form>
 

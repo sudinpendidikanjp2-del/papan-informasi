@@ -602,12 +602,13 @@ import { parseYoutubeId, thumbnailUrl } from './youtube.js';
             : '<span class="muted">Semua kategori</span>';
           return '<tr><td><div class="who"><span class="avatar sq">' + I.svg('monitor') + '</span><div><div class="n">' + esc(s.name) + '</div><div class="s">' + esc(s.slug) + '</div></div></div></td>' +
             '<td><a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url) + '</a></td>' +
-            '<td><div class="pills">' + cats + '</div></td>' +
+            '<td>' + (s.showQueue ? '<span class="pill">Antrian + informasi</span>' : '<span class="pill hi">Hanya informasi</span>') + '</td>' +
+            '<td><div class="pills">' + (s.showQueue ? cats : '<span class="muted">-</span>') + '</div></td>' +
             '<td>' + (s.idleMinutes ? s.idleMinutes + ' mnt' : '<span class="muted">Umum</span>') + '</td>' +
             '<td><div class="acts"><button class="btn btn-ghost btn-sm btn-icon" data-edit="' + s.id + '" aria-label="Ubah">' + I.svg('edit') + '</button>' +
             '<button class="btn btn-danger btn-sm btn-icon" data-del="' + s.id + '" aria-label="Hapus">' + I.svg('trash') + '</button></div></td></tr>';
         }).join('')
-      : '<tr><td colspan="5" class="empty">Belum ada layar. Tanpa layar terdaftar, alamat <b>/</b> menampilkan semua antrian.</td></tr>';
+      : '<tr><td colspan="6" class="empty">Belum ada layar. Tanpa layar terdaftar, alamat <b>/</b> menampilkan semua antrian.</td></tr>';
     if (contents.length) renderContent();
   }
 
@@ -617,6 +618,9 @@ import { parseYoutubeId, thumbnailUrl } from './youtube.js';
     f.name.value = s ? s.name : '';
     f.slug.value = s ? s.slug : '';
     f.idleMinutes.value = s && s.idleMinutes ? s.idleMinutes : '';
+    f.showQueue.checked = s ? !!s.showQueue : true;
+    f.resumeSeconds.value = s && s.resumeSecondsRaw ? s.resumeSecondsRaw : '';
+    syncScreenMode();
     checkboxes($('screenCats'), categories, s ? s.categoryIds : [], (k) => esc(k.name) + ' <span class="muted">(' + esc(k.prefix) + ')</span>');
     openDrawer('screenForm', s ? 'Ubah layar' : 'Tambah layar');
   }
@@ -633,6 +637,14 @@ import { parseYoutubeId, thumbnailUrl } from './youtube.js';
     }
   });
 
+  // Mode papan-informasi-saja: kategori tidak relevan, isian "lanjut otomatis" baru berarti.
+  function syncScreenMode() {
+    const q = $('showQueue').checked;
+    $('screenCatsField').classList.toggle('hidden', !q);
+    $('resumeField').classList.toggle('hidden', q);
+  }
+  $('showQueue').addEventListener('change', syncScreenMode);
+
   $('screenForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target.elements;
@@ -640,6 +652,8 @@ import { parseYoutubeId, thumbnailUrl } from './youtube.js';
       name: f.name.value, slug: f.slug.value,
       idleMinutes: f.idleMinutes.value === '' ? null : Number(f.idleMinutes.value),
       categoryIds: checkedIds($('screenCats')),
+      showQueue: f.showQueue.checked,
+      resumeSeconds: f.resumeSeconds.value === '' ? null : Number(f.resumeSeconds.value),
     };
     try {
       if (f.id.value) await call('/api/admin/screens/' + f.id.value, { method: 'PUT', body });

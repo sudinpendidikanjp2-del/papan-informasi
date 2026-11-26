@@ -141,7 +141,8 @@ import { loadYouTubeApi } from './youtube.js';
       v.playsInline = true;
       v.controls = false;
       v.addEventListener('ended', () => {
-        if (my === token && cur && cur.untilEnded) showNext();
+        if (my !== token || !cur || !cur.untilEnded) return;
+        if (paused) cur.endedWhilePaused = true; else showNext();
       });
       v.addEventListener('error', () => {
         // Video rusak atau hilang: lewati agar papan tidak macet.
@@ -201,7 +202,8 @@ import { loadYouTubeApi } from './youtube.js';
             startUnit();
           },
           onStateChange: (e) => {
-            if (my === token && e.data === YT.PlayerState.ENDED) showNext();
+            if (my !== token || e.data !== YT.PlayerState.ENDED) return;
+            if (paused) cur.endedWhilePaused = true; else showNext();
           },
           onError: () => skip(1500),
         },
@@ -217,6 +219,7 @@ import { loadYouTubeApi } from './youtube.js';
     cur.unitEndsAt = Date.now() + cur.unitMs;
     if (!cur.startedAt) cur.startedAt = Date.now();
     clearTimeout(unitTimer);
+    if (paused) return tickCountdown(); // pengunjung sedang menjelajah: durasi tayang dimatikan sementara
     if (!cur.untilEnded) unitTimer = setTimeout(() => my === token && nextUnit(), cur.unitMs);
     tickCountdown();
   }
@@ -322,7 +325,9 @@ import { loadYouTubeApi } from './youtube.js';
     const now = Date.now();
     let secs = 0;
     let text;
-    if (cur.loading) {
+    if (paused) {
+      text = 'Dijeda';
+    } else if (cur.loading) {
       text = 'Memuat…';
     } else if (cur.untilEnded) {
       text = 'Video';
@@ -339,8 +344,11 @@ import { loadYouTubeApi } from './youtube.js';
     const segs = $('tracker').children;
     if (segs.length !== items.length) buildTracker();
     let ratio = 0;
-    if (!cur.loading && !cur.untilEnded && cur.startedAt && cur.totalMs) {
+    if (paused) {
+      ratio = cur.frozenRatio || 0; // isian bilah berhenti di posisi terakhir selama pengunjung menjelajah
+    } else if (!cur.loading && !cur.untilEnded && cur.startedAt && cur.totalMs) {
       ratio = Math.min(1, (now - cur.startedAt) / cur.totalMs);
+      cur.frozenRatio = ratio;
     }
     for (let i = 0; i < segs.length; i += 1) {
       const s = segs[i];
@@ -366,6 +374,7 @@ import { loadYouTubeApi } from './youtube.js';
     prepareSaver();
     if (!items.length) return renderEmpty();
     buildTracker();
+    if (infoOnly) renderBrowseList();
     const keep = items.findIndex((x) => x.id === prevId);
     if (keep >= 0) {
       // Item aktif tidak diganggu selama isinya sama; hitung mundur lanjut sampai habis. Bila admin mengubah
@@ -390,10 +399,12 @@ import { loadYouTubeApi } from './youtube.js';
   }
 
   function isIdle() {
-    if (!snap || !saverItems.length) return false;
+    if (!saverItems.length || (!infoOnly && !snap)) return false;
     const own = screenCfg && screenCfg.idleMinutes;
     const minutes = Math.max(1, parseInt(own || settings.idle_minutes || '3', 10));
-    return P.timeSync.now() - snap.lastActivity > minutes * 60000;
+    // Diam = tanpa aktivitas antrian (bila layar menampilkan antrian) dan tanpa gerakan kursor/sentuhan/tombol.
+    const last = Math.max(infoOnly || !snap ? 0 : snap.lastActivity, lastUserActivity);
+    return P.timeSync.now() - last > minutes * 60000;
   }
 
   function updateSaver() {
@@ -542,6 +553,25 @@ import { loadYouTubeApi } from './youtube.js';
       }
     }
     applyIdentity();
+    applyMode();
+  }
+
+  // Mode layar: tampil antrian atau hanya papan informasi. Perubahan mode saat berjalan memuat ulang halaman
+  // (suara, overlay, dan langganan antrian bergantung pada mode sejak awal).
+  let modeKnown = false;
+  function applyMode() {
+    const want = !!(screenCfg && screenCfg.showQueue === false);
+    if (!modeKnown) {
+      modeKnown = true;
+      infoOnly = want;
+      document.getElementById('board').classList.toggle('info-only', want);
+      if (want) {
+        unlocked = true; // tanpa suara antrian, tidak perlu menunggu ketukan "Aktifkan"
+        $('unlock').classList.add('hidden');
+      }
+    } else if (want !== infoOnly) {
+      location.reload();
+    }
   }
 
   async function loadSettings() {
@@ -554,6 +584,7 @@ import { loadYouTubeApi } from './youtube.js';
   }
 
   async function loadState() {
+    if (infoOnly) return; // layar papan-informasi-saja tidak memuat antrian
     try {
       snap = await P.api('/api/state' + scopeQs);
       renderQueue();
@@ -573,10 +604,107 @@ import { loadYouTubeApi } from './youtube.js';
     }
   }
 
+  // ---------- Aktivitas pengunjung: screensaver, kursor, dan menjelajah (layar tanpa antrian) ----------
+
+  let infoOnly = false;
+  let paused = false;        // pengunjung sedang menjelajah: durasi tayang dibekukan
+  let resumeTimer = null;
+  let cursorTimer = null;
+  let lastX = null;
+  let lastY = null;
+  let lastUserActivity = P.timeSync.now();
+  const resumeMs = () => ((screenCfg && screenCfg.resumeSeconds) || 20) * 1000;
+  const MOVE_THRESHOLD = 8; // piksel; getaran kecil sensor/mouse tidak dihitung
+
+  function showCursor() {
+    document.body.classList.remove('nocursor');
+    clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(() => document.body.classList.add('nocursor'), 3000);
+  }
+
+  function onUserActivity(kind, e) {
+    if (kind === 'move') {
+      if (lastX === null) { lastX = e.clientX; lastY = e.clientY; return; }
+      if (Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY) < MOVE_THRESHOLD) return;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+    lastUserActivity = P.timeSync.now();
+    showCursor();
+    if (saverOn) stopSaver(); // screensaver hilang begitu kursor bergerak atau layar disentuh
+    if (infoOnly) enterBrowse();
+  }
+  document.addEventListener('pointermove', (e) => onUserActivity('move', e), { passive: true });
+  for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(t, (e) => onUserActivity(t, e), { passive: true });
+  showCursor();
+
+  const TYPE_ICON = { text: 'list', image: 'image', video: 'play', pdf: 'file', youtube: 'youtube' };
+  const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'Dokumen PDF', youtube: 'Video YouTube' };
+
+  function renderBrowseList() {
+    const box = $('browseList');
+    box.innerHTML = items.map((it, i) =>
+      '<button type="button" class="bi' + (i === idx ? ' on' : '') + '" data-i="' + i + '"' + (i === idx ? ' aria-current="true"' : '') + '>' +
+      '<span class="bic">' + P.icon(TYPE_ICON[it.type] || 'list') + '</span>' +
+      '<span class="bt"><span class="n">' + P.esc(it.title || TYPE_LABEL[it.type] || 'Informasi') + '</span>' +
+      '<span class="m">' + (TYPE_LABEL[it.type] || '') + '</span></span></button>').join('');
+    $('browsePdf').classList.toggle('hidden', !(cur && cur.pdf && cur.doc && cur.units > 1));
+    const on = box.querySelector('.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+
+  function enterBrowse() {
+    if (!items.length) return;
+    if (!paused) {
+      paused = true;
+      clearTimeout(unitTimer); // matikan durasi penayangan selama pengunjung melihat-lihat
+      tickCountdown();
+    }
+    // Daftar hanya digambar ulang saat dibuka: menggambar ulang tiap gerakan menghapus tombol yang sedang diklik.
+    if (!$('browse').classList.contains('open')) renderBrowseList();
+    $('browse').classList.add('open');
+    clearTimeout(resumeTimer);
+    resumeTimer = setTimeout(leaveBrowse, resumeMs());
+  }
+
+  // Tidak ada gerakan selama resumeSeconds: sembunyikan daftar dan lanjutkan dengan durasi penayangan penuh.
+  function leaveBrowse() {
+    paused = false;
+    clearTimeout(resumeTimer);
+    $('browse').classList.remove('open');
+    if (!cur || cur.endedWhilePaused) return showNext();
+    cur.startedAt = 0;
+    cur.frozenRatio = 0;
+    startUnit();
+  }
+
+  function jumpTo(i) {
+    if (!items[i]) return;
+    idx = i;
+    showItem(items[i]); // startUnit menahan timer selama paused
+    renderBrowseList();
+  }
+
+  function pdfStep(d) {
+    if (!cur || !cur.pdf || !cur.doc) return;
+    const u = Math.max(0, Math.min(cur.units - 1, cur.unit + d));
+    if (u === cur.unit) return;
+    cur.unit = u;
+    renderPdfPage(cur, token);
+    tickCountdown();
+  }
+
+  $('browse').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-i]');
+    if (b) return jumpTo(Number(b.dataset.i));
+    const p = e.target.closest('[data-pdf]');
+    if (p) pdfStep(Number(p.dataset.pdf));
+  });
+
   // ---------- Pemanggilan (suara) ----------
 
   function announce(c) {
-    if (!unlocked) return;
+    if (!unlocked || infoOnly) return;
     // Layar dengan filter kategori hanya mengumumkan panggilan untuk kategorinya.
     if (screenCfg && screenCfg.categoryIds.length && !screenCfg.categoryIds.includes(c.categoryId)) return;
     if (settings.sound_enabled !== '0') P.chime();

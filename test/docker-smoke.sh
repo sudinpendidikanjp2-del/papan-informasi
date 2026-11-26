@@ -106,7 +106,7 @@ start_container "$NAME"
 if wait_healthy "$NAME" 60; then pass "status container 'healthy'"; else fail "container tidak sehat"; docker logs "$NAME" 2>&1 | tail -15; exit 1; fi
 ok "/healthz 200" "$(code "$BASE/healthz")" 200
 HDR=$(curl -s --noproxy '*' -D - -o /dev/null "$BASE/")
-echo "$HDR" | grep -qi '^content-security-policy:.*script-src .self.;' && pass "CSP ketat pada halaman" || fail "CSP tidak ada"
+echo "$HDR" | grep -Eqi "^content-security-policy:.*script-src 'self'( https://www\.youtube\.com)?;" && pass "CSP ketat pada halaman" || fail "CSP tidak ada"
 echo "$HDR" | grep -qi '^x-content-type-options: nosniff' && pass "nosniff pada halaman" || fail "nosniff tidak ada"
 ASSET=$(curl -s --noproxy '*' "$BASE/" | grep -o 'src="/assets/[^"]*\.js"' | head -1 | sed 's/src="//; s/"$//')
 CT=$(curl -s --noproxy '*' -D - -o /dev/null "$BASE$ASSET" | tr -d '\r' | grep -i '^content-type:' || true)

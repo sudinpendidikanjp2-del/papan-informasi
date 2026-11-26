@@ -367,6 +367,13 @@ export const skip = (counterId) => setStatus(counterId, null, 'skipped');
 
 // ---------- Layar ----------
 
+export const DEFAULT_RESUME_SECONDS = 20;
+
+// Mode layar: tampil antrian atau hanya papan informasi, dan jeda sebelum tayangan lanjut setelah pengunjung diam.
+function screenMode(s) {
+  return { showQueue: s.show_queue !== 0, resumeSeconds: s.resume_seconds || DEFAULT_RESUME_SECONDS };
+}
+
 function screenRow(slug) {
   const s = db.prepare('SELECT * FROM screens WHERE slug = ?').get(slug);
   if (!s) throw new HttpError(404, 'Layar tidak terdaftar');
@@ -386,14 +393,14 @@ function categoryFilter(slug) {
 
 export function screenConfig(slug) {
   const s = screenRow(slug);
-  return { slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id) };
+  return { slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id), ...screenMode(s) };
 }
 
 export function listScreens() {
   return db
     .prepare('SELECT * FROM screens ORDER BY name')
     .all()
-    .map((s) => ({ id: s.id, slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id) }));
+    .map((s) => ({ id: s.id, slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id), ...screenMode(s), resumeSecondsRaw: s.resume_seconds }));
 }
 
 export function saveScreen(id, b) {
@@ -402,15 +409,17 @@ export function saveScreen(id, b) {
   if (!/^[a-z0-9-]{1,40}$/.test(slug)) throw new HttpError(400, 'Slug hanya boleh huruf kecil, angka, dan tanda hubung (maks 40)');
   if (!name) throw new HttpError(400, 'Nama layar wajib diisi');
   const idle = b.idleMinutes === '' || b.idleMinutes == null ? null : Math.max(1, Math.min(120, parseInt(b.idleMinutes, 10) || 3));
+  const showQueue = b.showQueue === false || b.showQueue === 0 || b.showQueue === '0' ? 0 : 1;
+  const resume = b.resumeSeconds === '' || b.resumeSeconds == null ? null : Math.max(5, Math.min(600, parseInt(b.resumeSeconds, 10) || DEFAULT_RESUME_SECONDS));
   const catIds = [...new Set((Array.isArray(b.categoryIds) ? b.categoryIds : []).map(Number).filter(Number.isInteger))];
   try {
     tx(() => {
       let sid = id;
       if (id) {
-        const r = db.prepare('UPDATE screens SET slug = ?, name = ?, idle_minutes = ? WHERE id = ?').run(slug, name, idle, id);
+        const r = db.prepare('UPDATE screens SET slug = ?, name = ?, idle_minutes = ?, show_queue = ?, resume_seconds = ? WHERE id = ?').run(slug, name, idle, showQueue, resume, id);
         if (!r.changes) throw new HttpError(404, 'Layar tidak ditemukan');
       } else {
-        sid = Number(db.prepare('INSERT INTO screens (slug, name, idle_minutes) VALUES (?, ?, ?)').run(slug, name, idle).lastInsertRowid);
+        sid = Number(db.prepare('INSERT INTO screens (slug, name, idle_minutes, show_queue, resume_seconds) VALUES (?, ?, ?, ?, ?)').run(slug, name, idle, showQueue, resume).lastInsertRowid);
       }
       db.prepare('DELETE FROM screen_categories WHERE screen_id = ?').run(sid);
       const ins = db.prepare('INSERT OR IGNORE INTO screen_categories (screen_id, category_id) VALUES (?, ?)');
