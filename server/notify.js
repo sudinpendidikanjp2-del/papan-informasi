@@ -60,7 +60,7 @@ export function subscribe(token, sub) {
   if (!enabled()) throw new HttpError(403, 'Notifikasi push dimatikan oleh admin');
   const t = db.prepare('SELECT id, status, day FROM tickets WHERE token = ?').get(String(token || ''));
   if (!t) throw new HttpError(404, 'Tiket tidak ditemukan');
-  if (t.day !== today() || !['waiting', 'called', 'serving'].includes(t.status)) {
+  if (t.day !== today() || !['waiting', 'serving'].includes(t.status)) {
     throw new HttpError(409, 'Tiket ini sudah selesai');
   }
 

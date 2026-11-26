@@ -149,6 +149,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 `);
 
 // Migrasi dari iterasi 1: catat pegawai yang melayani tiap antrian.
+// Panggil = melayani: status 'called' (alur dua langkah lama) digabung ke 'serving'. Aman diulang.
+db.exec("UPDATE tickets SET status = 'serving' WHERE status = 'called'");
+
 const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
 if (!ticketCols.includes('served_user_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');

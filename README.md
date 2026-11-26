@@ -62,7 +62,8 @@ Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi
 
 - Admin membuat akun di halaman **Pegawai** (username, password, peran) dan mencentang meja yang boleh dipakai pegawai itu.
 - Pegawai login di `/operator`, memilih satu meja dari daftar yang diizinkan, lalu bekerja di meja itu. Satu meja hanya bisa dipegang satu pegawai pada satu waktu.
-- Pegawai tidak bisa keluar atau berpindah meja selama masih memegang antrian yang dipanggil atau sedang dilayani.
+- **Memanggil nomor berarti langsung melayaninya**: tidak ada tombol "Mulai layani". Alurnya menunggu → dilayani (saat dipanggil) → selesai atau dilewati.
+- Pegawai tidak bisa keluar atau berpindah meja selama masih memegang antrian yang sedang dilayani.
 - Antrian mencatat pegawai yang melayani, dan laporan harian menampilkan jumlah per pegawai.
 - Peran `admin` boleh membuka panel meja mana pun.
 
@@ -109,6 +110,8 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 ## Notifikasi pengunjung
 
 Slip kiosk memuat kode QR ke halaman pantau (`/antrian/<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
+
+Saat nomor dipanggil, ponsel pengunjung yang membuka halaman pantau **bergetar berulang** (±tiap 3,5 detik, maksimal 90 detik) sampai pengunjung mengetuk "Saya sudah menuju meja"; panggil ulang memulainya lagi. Batas platform: getar hanya jalan di Chrome/Firefox Android saat halaman terbuka dan peringatan sudah diaktifkan lewat sentuhan; iOS Safari tidak mendukung getar. Untuk ponsel yang terkunci, notifikasi push membawa pola getar panjang (Android saja).
 
 - **Halaman pantau**: nomor, orang di depan, perkiraan tunggu, dan status (menunggu, giliran Anda, dilayani, selesai, dilewati). Diperbarui langsung lewat WebSocket tanpa muat ulang.
 - **Peringatan di halaman** (selalu tersedia): setelah pengunjung mengetuk *Aktifkan peringatan*, ponsel berbunyi dan bergetar saat sisa antrian di depan mencapai batas "hampir giliran" (default 3, bisa diatur) dan saat dipanggil, termasuk saat dipanggil ulang. Judul tab berkedip saat giliran tiba. Peringatan ini hanya bekerja selama halaman masih terbuka, dan ponsel tidak boleh dalam mode senyap.

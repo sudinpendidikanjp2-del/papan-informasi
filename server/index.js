@@ -216,7 +216,7 @@ async function api(req, res, url) {
   if (m === 'GET' && p === '/api/auth/history') return send(res, 200, svc.historyFor(requireSession(req).userId));
 
   // Meja: pegawai hanya di mejanya sendiri, admin di meja mana pun.
-  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|start|done|skip|ticket|transfer)$/);
+  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|done|skip|ticket|transfer)$/);
   if (m === 'POST' && counterAction) {
     const session = requireSession(req);
     const id = Number(counterAction[1]);
@@ -227,7 +227,6 @@ async function api(req, res, url) {
     const actions = {
       next: () => svc.callNext(id, session.userId),
       recall: () => svc.recall(id),
-      start: () => svc.startServing(id),
       done: () => svc.finish(id),
       skip: () => svc.skip(id),
     };

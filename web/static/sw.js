@@ -17,7 +17,8 @@ self.addEventListener('push', (event) => {
       renotify: true,
       // Notifikasi "giliran tiba" tetap tampil sampai disentuh agar tidak terlewat.
       requireInteraction: called,
-      vibrate: called ? [300, 150, 300, 150, 600] : [200],
+      // Pola panjang berulang agar tidak terlewat bila ponsel di saku (hanya Android; iOS mengabaikan vibrate).
+      vibrate: called ? [400, 150, 400, 150, 800, 700, 400, 150, 400, 150, 800] : [200],
       data: { url: d.url || '/' },
     })
   );

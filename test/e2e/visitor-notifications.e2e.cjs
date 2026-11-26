@@ -93,19 +93,34 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('called'));
   ok((await txt(ph, '#callBox')).includes('Silakan menuju Meja 1'), 'ponsel: "Silakan menuju Meja 1"');
   ok(await ph.evaluate((n) => window.__osc > n, oscBefore), 'ponsel: bel berbunyi saat dipanggil');
-  ok(await ph.evaluate((n) => window.__vib.length > n && window.__vib.some((v) => v.includes('600')), vibBefore), 'ponsel: perangkat bergetar dengan pola panjang saat dipanggil');
+  ok(await ph.evaluate((n) => window.__vib.length > n && window.__vib.some((v) => v.includes('800')), vibBefore), 'ponsel: perangkat bergetar dengan pola panjang saat dipanggil');
   await ph.waitForFunction(() => document.title.includes('Giliran Anda'), null, { timeout: 4000 });
   ok(true, 'ponsel: judul tab berkedip "Giliran Anda!"');
   await ph.screenshot({ path: SHOTS + '/e4-phone-called.png' });
+
+  // Getar berulang selama belum ditandai "sudah menuju meja"
+  const pat = () => ph.evaluate(() => window.__vib.filter((v) => v.startsWith('[400')).length);
+  ok(await ph.isVisible('#ack'), 'ponsel: tombol "Saya sudah menuju meja" tampil saat dipanggil');
+  const p1 = await pat();
+  await ph.waitForTimeout(8000);
+  const p2 = await pat();
+  ok(p2 - p1 >= 2, `ponsel: getar berulang selama belum ditandai (${p1} -> ${p2} dalam 8 dtk)`);
+  await ph.click('#ack');
+  await ph.waitForTimeout(500);
+  const p3 = await pat();
+  await ph.waitForTimeout(5000);
+  ok((await pat()) === p3 && await ph.isHidden('#ack'), 'ponsel: getar berhenti setelah diketuk "sudah menuju meja"');
 
   // Panggil ulang -> bunyi lagi
   const osc2 = await ph.evaluate(() => window.__osc);
   await post('/api/counter/1/recall', {}); // calledAt berubah
   await ph.waitForFunction((n) => window.__osc > n, osc2, { timeout: 5000 });
   ok(true, 'ponsel: panggil ulang membunyikan peringatan lagi');
+  await ph.waitForFunction((n) => window.__vib.filter((v) => v.startsWith('[400')).length > n, p3, { timeout: 5000 });
+  ok(await ph.isVisible('#ack'), 'ponsel: panggil ulang memulai getar berulang lagi');
 
   // Selesai
-  await post('/api/counter/1/start', {}); await fin();
+  await fin();
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('finished'));
   ok((await txt(ph, '#finishBox')).includes('Terima kasih') && await ph.isHidden('#alerts'), 'ponsel: pesan terima kasih, kartu peringatan disembunyikan');
   await ph.screenshot({ path: SHOTS + '/e4-phone-done.png' });

@@ -100,7 +100,7 @@ describe('pemicu notifikasi', () => {
     assert.match(called[0].body, /B-005/);
     assert.match(called[0].body, /Meja 3/);
     const st = svc.ticketStatus(tk[4].token);
-    assert.equal(st.status, 'called');
+    assert.equal(st.status, 'serving');
     assert.equal(st.counter, 'Meja 3');
   });
   it('panggil ulang mengirim push lagi', async () => {

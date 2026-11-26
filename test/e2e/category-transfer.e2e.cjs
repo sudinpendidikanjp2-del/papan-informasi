@@ -81,7 +81,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   ok(true, 'operator Sari: memanggil B-002 (pindahan, datang lebih awal) lebih dulu');
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('called'));
   ok((await txt(ph, '#callBox')).includes('Meja 3') && await ph.isHidden('#movedBanner'), 'ponsel: "Silakan menuju Meja 3", banner pindah hilang');
-  await sari.click('#start'); await sari.click('#done');
+  await sari.click('#done');
 
   // Kembalikan ke antrian kategori sendiri (kategori sama): nomor tetap
   await budi.click('#next');

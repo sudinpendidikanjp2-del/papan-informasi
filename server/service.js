@@ -55,7 +55,7 @@ function currentFor(counterId) {
     .prepare(
       `SELECT t.id, t.number, t.status, t.called_at, t.category_id, t.priority, cat.prefix
          FROM tickets t JOIN categories cat ON cat.id = t.category_id
-        WHERE t.served_by = ? AND t.status IN ('called','serving')
+        WHERE t.served_by = ? AND t.status = 'serving'
         ORDER BY t.called_at DESC LIMIT 1`
     )
     .get(counterId);
@@ -187,7 +187,7 @@ export function ticketStatus(token) {
     priority: !!t.priority,
     ahead,
     etaMinutes,
-    counter: t.status === 'called' || t.status === 'serving' ? t.counter_name : null,
+    counter: t.status === 'serving' ? t.counter_name : null,
     dedicatedTo: t.status === 'waiting' ? t.dedicated_name : null,
     prevLabel: t.status === 'waiting' ? t.prev_label : null,
     calledAt: t.called_at,
@@ -300,6 +300,7 @@ export function dedicatedWaiting(counterId) {
 }
 
 // ---------- Antrian: meja / petugas ----------
+// Status tiket: waiting -> serving (saat dipanggil) -> done | skipped. Status lama 'called' dimigrasi ke 'serving'.
 
 export function callNext(counterId, userId = null) {
   const c = counterById(counterId);
@@ -320,7 +321,7 @@ export function callNext(counterId, userId = null) {
 
   const now = Date.now();
   db.prepare(
-    "UPDATE tickets SET status = 'called', served_by = ?, served_user_id = ?, called_at = ? WHERE id = ?"
+    "UPDATE tickets SET status = 'serving', served_by = ?, served_user_id = ?, called_at = ? WHERE id = ?"
   ).run(c.id, userId, now, t.id);
   touch(t.category_id);
   const payload = {
@@ -358,7 +359,7 @@ function setStatus(counterId, from, to, extra = '') {
   return { label: cur.label, status: to };
 }
 
-export const startServing = (counterId) => setStatus(counterId, 'called', 'serving');
+// Memanggil nomor berarti langsung melayani: tidak ada langkah "mulai layani" terpisah.
 export const finish = (counterId) => setStatus(counterId, null, 'done', ', done_at = ?');
 export const skip = (counterId) => setStatus(counterId, null, 'skipped');
 
