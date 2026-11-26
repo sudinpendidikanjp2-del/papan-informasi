@@ -284,7 +284,7 @@
         fill.style.width = '';
       }
     }
-    $('trackerCount').textContent = items.length ? (idx + 1) + ' dari ' + items.length : '';
+    $('trackerCount').textContent = items.length ? (idx + 1) + '/' + items.length : '';
   }
 
   function applyPlaylist(newPl) {
@@ -418,14 +418,15 @@
     $('statServing').textContent = snap.serving ?? 0;
 
     const box = $('counters');
-    box.classList.toggle('two', snap.counters.length > 5);
+    box.classList.toggle('two', snap.counters.length > 4);
+    box.classList.toggle('dense', snap.counters.length > 10);
     box.innerHTML = snap.counters.length
       ? snap.counters.map((c) => {
           const cur = c.current;
           const queued = (c.dedicatedWaiting || []).length;
           const status = cur
-            ? '<span class="pill">Melayani</span>'
-            : '<span class="pill ok"><span class="dot"></span>Kosong</span>';
+            ? '<span class="pill busy"><span class="t">Melayani</span></span>'
+            : '<span class="pill ok" title="Kosong"><span class="dot"></span><span class="t">Kosong</span></span>';
           return '<div class="ctr' + (cur ? ' busy' : '') + '">' +
             '<div class="av">' + P.esc(counterBadge(c.name)) + '</div>' +
             '<div class="grow"><div class="nm">' + P.esc(c.name) + '</div>' +
@@ -434,13 +435,7 @@
         }).join('')
       : '<div class="muted">Belum ada meja</div>';
 
-    $('cats').innerHTML = snap.categories.length
-      ? snap.categories.map((k) =>
-          '<div class="cat"><span>' + P.esc(k.name) + ' <span class="muted">(' + P.esc(k.prefix) + ')</span></span>' +
-          '<span class="w">' + k.waiting + '</span></div>').join('')
-      : '<div class="muted">Belum ada kategori</div>';
-
-    $('recent').innerHTML = (snap.recent || []).slice(0, 6).map((r) =>
+    $('recent').innerHTML = (snap.recent || []).slice(0, 4).map((r) =>
       '<span class="rc"><b>' + P.esc(r.label) + '</b> → ' + P.esc(r.counter || '') +
       (r.priority ? ' ' + P.icon('star') : '') + '</span>').join('');
   }

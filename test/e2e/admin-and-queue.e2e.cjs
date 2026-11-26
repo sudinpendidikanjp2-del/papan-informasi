@@ -260,8 +260,8 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   await lobi.click('#unlockBtn'); await lb.click('#unlockBtn');
   await lobi.waitForTimeout(1200);
   ok((await txt(lobi, '#screenName')) === 'Lobi' && (await txt(lobi, '#orgName')) === 'Dinas Uji Coba', 'display: nama instansi dan nama layar');
-  ok((await txt(lobi, '#cats')).includes('Pelayanan Umum') && !(await txt(lobi, '#cats')).includes('Administrasi'), 'display lobi: hanya kategori A');
-  ok((await txt(lb, '#cats')).includes('Administrasi') && !(await txt(lb, '#cats')).includes('Pelayanan'), 'display layar-b: hanya kategori B');
+  ok((await txt(lobi, '#counters')).includes('Pelayanan Umum') && !(await txt(lobi, '#counters')).includes('Administrasi'), 'display lobi: hanya kategori A');
+  ok((await txt(lb, '#counters')).includes('Administrasi') && !(await txt(lb, '#counters')).includes('Pelayanan'), 'display layar-b: hanya kategori B');
   const plB = await lb.evaluate(async () => (await (await fetch('/api/playlist?screen=layar-b')).json()).main.map((x) => x.title));
   const plL = await lobi.evaluate(async () => (await (await fetch('/api/playlist?screen=lobi')).json()).main.map((x) => x.title));
   ok(plB.some((t) => t.startsWith('Khusus B')) && !plL.some((t) => t.startsWith('Khusus B')), 'display: konten khusus hanya di layar B');
