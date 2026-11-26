@@ -85,7 +85,7 @@ describe('pemicu notifikasi', () => {
     const n = kinds('near')[0];
     assert.match(n.body, /B-005/);
     assert.match(n.body, /3 antrian lagi/);
-    assert.equal(n.url, '/t.html?k=' + tk[4].token);
+    assert.equal(n.url, '/antrian/' + tk[4].token);
   });
   it('tidak ada push "hampir giliran" ganda', async () => {
     svc.finish(3); svc.callNext(3, null);
@@ -162,12 +162,12 @@ describe('pengaturan notifikasi dan QR', () => {
     assert.equal(getSettings().notify_ahead, '20');
   });
   it('trackUrl memakai pengaturan admin, atau alamat kiosk bila kosong', () => {
-    assert.equal(notify.trackUrl('abc', 'http://fallback'), 'http://192.168.1.10:3000/t.html?k=abc');
+    assert.equal(notify.trackUrl('abc', 'http://fallback'), 'http://192.168.1.10:3000/antrian/abc');
     svc.saveSettings({ public_base_url: '' });
-    assert.equal(notify.trackUrl('abc', 'http://kiosk.local:3000'), 'http://kiosk.local:3000/t.html?k=abc');
+    assert.equal(notify.trackUrl('abc', 'http://kiosk.local:3000'), 'http://kiosk.local:3000/antrian/abc');
   });
   it('QR berupa SVG yang dapat diskalakan', () => {
-    const svg = notify.qrSvg('http://x/t.html?k=abc');
+    const svg = notify.qrSvg('http://x/antrian/abc');
     assert.ok(svg.startsWith('<svg') && svg.includes('viewBox'));
   });
   it('tiket hari lain ditandai expired, token tak dikenal = 404', () => {

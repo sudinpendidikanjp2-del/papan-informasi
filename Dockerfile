@@ -1,5 +1,15 @@
 # Image Papan Informasi. Diuji oleh test/docker-smoke.sh (build, non-root, volume, penutupan anggun,
 # backup/restore, compose); skrip yang sama berjalan di CI.
+# ---- Tahap 1: build antarmuka (Vite). Tidak ikut ke image akhir. ----
+FROM node:22-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY vite.config.js ./
+COPY web ./web
+RUN npm run build
+
+# ---- Tahap 2: image akhir, hanya dependensi produksi dan hasil build. ----
 FROM node:22-slim
 
 # Paket sistem: ffmpeg untuk konversi video, tar untuk skrip backup/restore, ca-certificates agar server
@@ -15,17 +25,16 @@ RUN if [ -n "$APT_PACKAGES" ]; then \
 
 WORKDIR /app
 
-# Skrip postinstall (menyalin pdf.js ke public/vendor) harus ada sebelum npm ci berjalan.
 COPY package.json package-lock.json ./
-COPY scripts ./scripts
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY server ./server
-COPY public ./public
+COPY scripts ./scripts
+COPY --from=build /app/dist ./dist
 
 # Direktori data dibuat dan dimiliki pengguna "node" sebelum dideklarasikan sebagai volume,
 # supaya volume bernama baru bisa ditulis tanpa root.
-RUN mkdir -p /data && chown -R node:node /data /app/public/vendor
+RUN mkdir -p /data && chown -R node:node /data
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000

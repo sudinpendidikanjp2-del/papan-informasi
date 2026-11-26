@@ -62,17 +62,17 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
     await ctx.close();
   };
 
-  await visit('papan (layar payload)', '/?screen=xss');
+  await visit('papan (layar payload)', '/layar/xss');
   await visit('papan (semua kategori)', '/');
-  await visit('kiosk', '/kiosk.html', { setup: async (p) => { await p.waitForSelector('.cat'); } });
-  await visit('kiosk (slip nomor)', '/kiosk.html', { setup: async (p) => { await p.locator('.cat', { hasText: 'P1' }).first().click(); await p.waitForSelector('#overlay:not(.hidden)'); } });
-  await visit('halaman pantau (dipanggil)', `/t.html?k=${t.token}`);
-  await visit('halaman pantau (menunggu)', `/t.html?k=${t2.token}`);
+  await visit('kiosk', '/kiosk', { setup: async (p) => { await p.waitForSelector('.cat'); } });
+  await visit('kiosk (slip nomor)', '/kiosk', { setup: async (p) => { await p.locator('.cat', { hasText: 'P1' }).first().click(); await p.waitForSelector('#overlay:not(.hidden)'); } });
+  await visit('halaman pantau (dipanggil)', `/antrian/${t.token}`);
+  await visit('halaman pantau (menunggu)', `/antrian/${t2.token}`);
   await staff.post(`/api/counter/${ctrId}/transfer`, { data: { toCategoryId: 1 } }); // t pindah ke kategori lain
   await staff.post('/api/auth/counter', { data: { counterId: null } }); // lepas meja agar bisa dipilih lewat UI
-  await visit('halaman pantau (setelah dipindah)', `/t.html?k=${t.token}`);
-  await visit('panel meja (pilih meja)', '/operator.html', { vp: { width: 390, height: 844 }, setup: async (p) => { await p.fill('#u', 'xss1'); await p.fill('#p', 'password1'); await p.click('#loginForm button'); await p.waitForSelector('#pickView:visible, #panelView:visible'); } });
-  await visit('panel meja (panel, buat nomor, riwayat)', '/operator.html', { vp: { width: 390, height: 844 }, wait: 800, setup: async (p) => {
+  await visit('halaman pantau (setelah dipindah)', `/antrian/${t.token}`);
+  await visit('panel meja (pilih meja)', '/operator', { vp: { width: 390, height: 844 }, setup: async (p) => { await p.fill('#u', 'xss1'); await p.fill('#p', 'password1'); await p.click('#loginForm button'); await p.waitForSelector('#pickView:visible, #panelView:visible'); } });
+  await visit('panel meja (panel, buat nomor, riwayat)', '/operator', { vp: { width: 390, height: 844 }, wait: 800, setup: async (p) => {
     await p.fill('#u', 'xss1'); await p.fill('#p', 'password1'); await p.click('#loginForm button');
     await p.waitForSelector('#pickView:visible, #panelView:visible');
     if (await p.isVisible('#pickView')) { await p.locator('#pickList button').first().click(); await p.waitForSelector('#panelView:visible'); }
@@ -86,11 +86,11 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       for (const [pg, sel] of drawers) { await p.click(`[data-page=${pg}]`); await p.waitForTimeout(250); await p.locator(sel).first().click(); await p.waitForTimeout(350); await p.keyboard.press('Escape'); }
     }
   };
-  await visit('admin (semua halaman)', '/admin.html', { wait: 800, setup: adminSetup(['dashboard', 'content', 'screens', 'queue', 'users', 'report', 'settings']) });
-  await visit('admin (laci ubah: konten, layar, kategori, meja, pegawai)', '/admin.html', { wait: 800, setup: adminSetup([], [
+  await visit('admin (semua halaman)', '/admin', { wait: 800, setup: adminSetup(['dashboard', 'content', 'screens', 'queue', 'users', 'report', 'settings']) });
+  await visit('admin (laci ubah: konten, layar, kategori, meja, pegawai)', '/admin', { wait: 800, setup: adminSetup([], [
     ['content', '#contentRows [data-edit]'], ['screens', '#screenRows [data-edit]'], ['queue', '#queueRows [data-ckedit]'], ['users', '#userRows [data-uedit]'],
   ]) });
-  await visit('admin (tab meja + sidebar)', '/admin.html', { wait: 800, setup: async (p) => {
+  await visit('admin (tab meja + sidebar)', '/admin', { wait: 800, setup: async (p) => {
     await adminSetup(['queue'])(p); await p.click('#queueTabs [data-tab=ctrs]'); await p.waitForTimeout(250);
     await p.locator('#queueRows [data-ctedit]').first().click(); await p.waitForTimeout(350);
   } });

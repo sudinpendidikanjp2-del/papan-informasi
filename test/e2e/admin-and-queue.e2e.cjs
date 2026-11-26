@@ -20,7 +20,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   // ================= ADMIN =================
   const actx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const a = await actx.newPage(); watch(a, 'admin');
-  await a.goto(B + '/admin.html');
+  await a.goto(B + '/admin');
   await a.waitForSelector('#loginForm:visible');
   await a.fill('#u', 'admin'); await a.fill('#p', 'salah'); await a.click('#loginForm button');
   await a.waitForFunction(() => document.getElementById('loginErr').textContent.length > 0);
@@ -176,7 +176,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   // ================= KIOSK =================
   const kctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const k = await kctx.newPage(); watch(k, 'kiosk');
-  await k.goto(B + '/kiosk.html');
+  await k.goto(B + '/kiosk');
   await k.waitForSelector('.cat');
   ok(await k.isVisible('#prioBox'), 'kiosk: tombol prioritas tampil setelah diaktifkan admin');
   await k.locator('.cat', { hasText: 'Pelayanan Umum' }).click();
@@ -198,7 +198,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   // ================= OPERATOR: Budi =================
   const octx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const o = await octx.newPage(); watch(o, 'budi');
-  await o.goto(B + '/operator.html');
+  await o.goto(B + '/operator');
   await o.fill('#u', 'budi'); await o.fill('#p', 'password1'); await o.click('#loginForm button');
   await o.waitForSelector('#pickView:visible');
   await o.locator('#pickList button', { hasText: 'Meja 1' }).click();
@@ -219,7 +219,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   // Dewi memegang Meja 2: antrian khusus meja dipanggil lebih dulu
   const dctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const d = await dctx.newPage(); watch(d, 'dewi');
-  await d.goto(B + '/operator.html');
+  await d.goto(B + '/operator');
   await d.fill('#u', 'dewi'); await d.fill('#p', 'password1'); await d.click('#loginForm button');
   await d.waitForSelector('#pickView:visible');
   await d.locator('#pickList button', { hasText: 'Meja 2' }).click();
@@ -256,7 +256,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   const dispctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const lobi = await dispctx.newPage(); watch(lobi, 'lobi');
   const lb = await dispctx.newPage(); watch(lb, 'layar-b');
-  await lobi.goto(B + '/?screen=lobi'); await lb.goto(B + '/?screen=layar-b');
+  await lobi.goto(B + '/layar/lobi'); await lb.goto(B + '/layar/layar-b');
   await lobi.click('#unlockBtn'); await lb.click('#unlockBtn');
   await lobi.waitForTimeout(1200);
   ok((await txt(lobi, '#screenName')) === 'Lobi' && (await txt(lobi, '#orgName')) === 'Dinas Uji Coba', 'display: nama instansi dan nama layar');
@@ -282,7 +282,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   // ================= MOBILE ADMIN =================
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const m = await mctx.newPage(); watch(m, 'admin-mobile');
-  await m.goto(B + '/admin.html');
+  await m.goto(B + '/admin');
   await m.fill('#u', 'admin'); await m.fill('#p', 'rahasia123'); await m.click('#loginForm button');
   await m.waitForSelector('#shell:visible');
   ok(!(await m.isVisible('#sidebar')) || (await m.evaluate(() => document.getElementById('sidebar').getBoundingClientRect().right <= 0)), 'mobile: sidebar tersembunyi di luar layar');

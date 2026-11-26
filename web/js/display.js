@@ -1,3 +1,6 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const $ = (id) => document.getElementById(id);
@@ -7,8 +10,9 @@
   let snap = null;
   let unlocked = false;
 
-  // Layar ini diidentifikasi lewat ?screen=<slug>. Tanpa parameter: semua antrian dan konten bersama.
-  const slug = (new URLSearchParams(location.search).get('screen') || '').trim().toLowerCase();
+  // Layar ini diidentifikasi lewat jalur /layar/<slug>. Tanpa slug (jalur /): semua antrian dan konten bersama.
+  const pathSlug = (location.pathname.match(/^\/layar\/([^/]+)\/?$/) || [])[1];
+  const slug = decodeURIComponent(pathSlug || '').trim().toLowerCase();
   let screenCfg = null;
   let screenMissing = false;
   let scopeQs = slug ? '?screen=' + encodeURIComponent(slug) : '';
@@ -169,8 +173,12 @@
   let pdfjsPromise = null;
   function loadPdfjs() {
     if (!pdfjsPromise) {
-      pdfjsPromise = import('/vendor/pdfjs/pdf.min.mjs').then((m) => {
-        m.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+      // Build legacy pdf.js (kompatibel dengan browser TV lama), dibundel Vite sebagai potongan terpisah.
+      pdfjsPromise = Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.min.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+      ]).then(([m, w]) => {
+        m.GlobalWorkerOptions.workerSrc = w.default;
         return m;
       });
     }
@@ -184,7 +192,7 @@
     try {
       const m = await loadPdfjs();
       if (!pdfDocs.has(it.url)) {
-        pdfDocs.set(it.url, m.getDocument({ url: it.url, standardFontDataUrl: '/vendor/pdfjs/standard_fonts/' }).promise);
+        pdfDocs.set(it.url, m.getDocument({ url: it.url, standardFontDataUrl: '/pdf-fonts/' }).promise);
       }
       const doc = await pdfDocs.get(it.url);
       if (my !== token) return;

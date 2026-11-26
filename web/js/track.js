@@ -1,7 +1,10 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const $ = (id) => document.getElementById(id);
-  const token = (new URLSearchParams(location.search).get('k') || '').toLowerCase();
+  const token = decodeURIComponent((location.pathname.match(/^\/antrian\/([^/]+)\/?$/) || [])[1] || '').toLowerCase();
   const valid = /^[a-f0-9]{24}$/.test(token);
 
   let st = null;          // status tiket terakhir

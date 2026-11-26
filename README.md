@@ -11,12 +11,13 @@ Butuh Node.js 22.13 atau lebih baru. `ffmpeg` bersifat opsional (untuk mengonver
 
 ```bash
 npm install
+npm run build      # membangun antarmuka (Vite) ke dist/; wajib sebelum npm start
 ADMIN_USERNAME="admin" ADMIN_PASSWORD="ganti-dengan-password-kuat" npm start
 ```
 
-Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
+Lalu buka `http://localhost:3000/admin` dan masuk dengan akun tersebut.
 
-- `npm install` juga menyalin pustaka pdf.js ke `public/vendor/pdfjs` (skrip `postinstall`). Folder itu diabaikan git, jadi jalankan `npm install` di setiap salinan baru.
+- Antarmuka ditulis di `web/` dan dibangun Vite ke `dist/` (diabaikan git); server menyajikan `dist/`. Selama pengembangan jalankan `npm run dev` (server Vite di :5173 dengan proxy ke server di :3000). `npm test` dan `npm run test:e2e` membangun ulang otomatis. Alamat lama berakhiran `.html` dan `/?screen=` dialihkan 301 ke jalur baru.
 - Admin pertama dibuat **hanya saat belum ada pengguna sama sekali**. Mengubah `ADMIN_PASSWORD` setelahnya tidak berpengaruh; ganti password lewat halaman Pegawai.
 - Jika `ADMIN_PASSWORD` tidak diset, server membuat password acak dan mencetaknya satu kali di konsol. Password minimal 8 karakter.
 
@@ -38,18 +39,18 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 
 | Halaman | URL | Pengguna |
 |---|---|---|
-| Papan informasi | `/?screen=<slug>` | Layar publik (buka dalam mode kiosk/layar penuh). Tambah `&sound=on` pada perangkat kiosk yang browsernya berflag autoplay (lihat panduan penerapan) |
-| Kiosk ambil nomor | `/kiosk.html` | Pengunjung (layar sentuh) |
-| Pantau antrian | `/t.html?k=<token>` | Pengunjung, lewat QR di slip nomor |
-| Panel meja | `/operator.html` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
-| Admin | `/admin.html` | Admin: dasbor, konten, layar, kategori, meja, pegawai, laporan, pengaturan |
+| Papan informasi | `/layar/<slug>` (atau `/` untuk semua) | Layar publik (buka dalam mode kiosk/layar penuh). Tambah `?sound=on` pada perangkat kiosk yang browsernya berflag autoplay (lihat panduan penerapan) |
+| Kiosk ambil nomor | `/kiosk` | Pengunjung (layar sentuh) |
+| Pantau antrian | `/antrian/<token>` | Pengunjung, lewat QR di slip nomor |
+| Panel meja | `/operator` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
+| Admin | `/admin` | Admin: dasbor, konten, layar, kategori, meja, pegawai, laporan, pengaturan |
 
-Desain mengikuti satu sistem (`public/css/app.css`): biru dominan, kartu putih berborder tipis, kuning hanya sebagai sorotan kecil.
+Desain mengikuti satu sistem (`web/css/app.css`): biru dominan, kartu putih berborder tipis, kuning hanya sebagai sorotan kecil.
 Papan dirancang landscape dan skalanya mengikuti lebar layar (diperiksa di 1366×768 sampai 4K). Panel meja dan admin responsif sampai layar ponsel.
 
 ## Banyak layar
 
-Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi`), lalu dibuka di perangkatnya lewat `/?screen=lobi`.
+Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi`), lalu dibuka di perangkatnya lewat `/layar/lobi`.
 
 - **Kategori**: layar hanya menampilkan antrian, meja, dan panggilan untuk kategori yang dipilih. Kosong berarti semua kategori.
 - **Konten**: tiap item konten bisa ditujukan ke layar tertentu. Item tanpa tujuan menjadi konten bersama yang tampil di semua layar.
@@ -60,7 +61,7 @@ Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi
 ## Login pegawai
 
 - Admin membuat akun di halaman **Pegawai** (username, password, peran) dan mencentang meja yang boleh dipakai pegawai itu.
-- Pegawai login di `/operator.html`, memilih satu meja dari daftar yang diizinkan, lalu bekerja di meja itu. Satu meja hanya bisa dipegang satu pegawai pada satu waktu.
+- Pegawai login di `/operator`, memilih satu meja dari daftar yang diizinkan, lalu bekerja di meja itu. Satu meja hanya bisa dipegang satu pegawai pada satu waktu.
 - Pegawai tidak bisa keluar atau berpindah meja selama masih memegang antrian yang dipanggil atau sedang dilayani.
 - Antrian mencatat pegawai yang melayani, dan laporan harian menampilkan jumlah per pegawai.
 - Peran `admin` boleh membuka panel meja mana pun.
@@ -107,7 +108,7 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 
 ## Notifikasi pengunjung
 
-Slip kiosk memuat kode QR ke halaman pantau (`/t.html?k=<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
+Slip kiosk memuat kode QR ke halaman pantau (`/antrian/<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
 
 - **Halaman pantau**: nomor, orang di depan, perkiraan tunggu, dan status (menunggu, giliran Anda, dilayani, selesai, dilewati). Diperbarui langsung lewat WebSocket tanpa muat ulang.
 - **Peringatan di halaman** (selalu tersedia): setelah pengunjung mengetuk *Aktifkan peringatan*, ponsel berbunyi dan bergetar saat sisa antrian di depan mencapai batas "hampir giliran" (default 3, bisa diatur) dan saat dipanggil, termasuk saat dipanggil ulang. Judul tab berkedip saat giliran tiba. Peringatan ini hanya bekerja selama halaman masih terbuka, dan ponsel tidak boleh dalam mode senyap.
@@ -198,20 +199,20 @@ server/
   ratelimit.js pembatas laju endpoint publik
   audit.js     log audit JSON ke stdout
   db.js        skema SQLite, migrasi ringan, dan data awal
-public/
-  display.html, kiosk.html, operator.html, admin.html, t.html
-  sw.js        service worker khusus notifikasi push
+web/           sumber antarmuka (Vite membangunnya ke dist/)
+  display.html, kiosk.html, operator.html, admin.html, antrian.html
+  static/sw.js service worker khusus notifikasi push (disalin apa adanya ke dist/)
   css/app.css  sistem desain bersama (token warna di :root)
   js/common.js utilitas API, WebSocket, waktu server, suara
   js/icons.js  ikon SVG
   js/display.js logika papan informasi
   js/kiosk.js, js/operator.js, js/track.js, js/admin.js  logika halaman masing-masing
   js/admin.js  logika dasbor admin
+vite.config.js  konfigurasi build antarmuka
 test/         tes unit, integrasi (npm test), dan e2e (test/e2e)
 deploy/       contoh systemd, proxy, dan skrip layar kiosk
 docs/         panduan penerapan
 scripts/
-  copy-vendor.js  menyalin pdf.js ke public/vendor (dipanggil postinstall)
   backup.js       backup database dan unggahan menjadi satu arsip
   restore.js      pulihkan dari arsip backup
 ```

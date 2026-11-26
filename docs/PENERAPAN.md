@@ -38,9 +38,11 @@ sudo useradd --system --home /opt/papan-informasi --shell /usr/sbin/nologin papa
 sudo git clone https://github.com/sudinpendidikanjp2-del/papan-informasi /opt/papan-informasi
 sudo chown -R papan:papan /opt/papan-informasi
 
-# 2. Pasang dependensi (juga menyalin pdf.js ke public/vendor lewat skrip postinstall)
+# 2. Pasang dependensi dan bangun antarmuka (Vite, hasilnya di dist/). Alat build hanya dibutuhkan di langkah ini.
 cd /opt/papan-informasi
-sudo -u papan npm ci --omit=dev
+sudo -u papan npm ci
+sudo -u papan npm run build
+sudo -u papan npm prune --omit=dev
 
 # 3. Konfigurasi. Edit berkasnya: ganti ADMIN_PASSWORD dengan password kuat.
 sudo install -m 0640 -o root -g papan deploy/papan-informasi.env.example /etc/papan-informasi.env
@@ -113,7 +115,7 @@ Satu perangkat per layar. Langkah untuk Raspberry Pi OS atau Ubuntu desktop:
 2. Salin repo atau cukup skrip `deploy/kiosk-display.sh` ke perangkat, lalu `chmod +x`.
 3. Daftarkan layar di halaman **Layar** admin (mis. slug `lobi`), lalu uji manual:
    ```bash
-   deploy/kiosk-display.sh "https://antrian.instansi.go.id/?screen=lobi&sound=on"
+   deploy/kiosk-display.sh "https://antrian.instansi.go.id/layar/lobi?sound=on"
    ```
 4. Mulai otomatis: aktifkan login otomatis desktop (Raspberry Pi: `sudo raspi-config` > System Options > Auto Login), lalu
    ```bash
@@ -125,7 +127,7 @@ Skrip membuka kembali browser bila tertutup, menonaktifkan penghemat layar (X11)
 
 **Suara.** Browser menahan audio sampai ada interaksi pengguna. Parameter `sound=on` pada alamat menyembunyikan overlay "Aktifkan" dan skrip kiosk menjalankan Chromium dengan `--autoplay-policy=no-user-gesture-required` agar bel dan suara panggilan langsung berbunyi. **Bagian ini belum teruji di perangkat nyata** (peramban headless di lingkungan pengembangan tidak menegakkan kebijakan autoplay). Bila bel atau suara tidak keluar, hapus `&sound=on` dari alamat, mulai ulang, dan ketuk tombol **Aktifkan** sekali. Suara pembacaan nomor (TTS) juga bergantung pada adanya suara bahasa Indonesia di perangkat; bunyi bel tidak.
 
-Layar sentuh kiosk pengambilan nomor memakai alamat `https://.../kiosk.html` dengan cara yang sama (tanpa `sound=on`).
+Layar sentuh kiosk pengambilan nomor memakai alamat `https://.../kiosk` dengan cara yang sama (tanpa `sound=on`).
 
 ## 6. Backup dan pemulihan
 
@@ -160,12 +162,12 @@ Data lama tidak dihapus: dipindahkan ke `/var/lib/papan-informasi/.bak-<waktu>`;
 sudo systemctl start papan-backup.service         # 1. backup dulu
 cd /opt/papan-informasi
 sudo -u papan git pull                            # 2. ambil versi baru
-sudo -u papan npm ci --omit=dev                   # 3. dependensi (dan pdf.js)
+sudo -u papan npm ci && sudo -u papan npm run build && sudo -u papan npm prune --omit=dev   # 3. dependensi dan build antarmuka
 sudo systemctl restart papan-informasi            # 4. mulai ulang
 curl -s http://127.0.0.1:3000/healthz             # 5. periksa
 ```
 
-Migrasi database berjalan otomatis saat start dan hanya **menambah** tabel dan kolom. Karena itu kode lama biasanya masih bisa membuka database yang sudah dimigrasi, tetapi fitur yang butuh kolom baru tidak akan jalan. Untuk kembali ke versi sebelumnya dengan bersih: `git checkout <commit lama>`, `npm ci --omit=dev`, pulihkan backup yang diambil sebelum pembaruan, lalu mulai ulang.
+Migrasi database berjalan otomatis saat start dan hanya **menambah** tabel dan kolom. Karena itu kode lama biasanya masih bisa membuka database yang sudah dimigrasi, tetapi fitur yang butuh kolom baru tidak akan jalan. Untuk kembali ke versi sebelumnya dengan bersih: `git checkout <commit lama>`, `npm ci && npm run build`, pulihkan backup yang diambil sebelum pembaruan, lalu mulai ulang.
 
 ## 8. Pemantauan
 

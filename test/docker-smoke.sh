@@ -66,7 +66,7 @@ start_container() { # nama [env tambahan...]
     --health-interval 2s --health-start-period 1s --health-retries 15 \
     -e ADMIN_PASSWORD="$PASS_ADMIN" "$@" "$IMAGE" >/dev/null
 }
-code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+code() { curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "$@"; }
 login() { # jar user pass
   code -c "$1" -X POST "$BASE/api/auth/login" -H 'content-type: application/json' -d "{\"username\":\"$2\",\"password\":\"$3\"}"
 }
@@ -91,10 +91,11 @@ step "2. Isi image"
 in_image() { docker run --rm --entrypoint sh "$IMAGE" -c "$1" 2>/dev/null; }
 # Entrypoint dimulai sebagai root hanya untuk memperbaiki pemilik /data, lalu menurunkan hak: perintah apa pun dijalankan sebagai node.
 UID_IN=$(docker run --rm "$IMAGE" id -u 2>/dev/null || echo ?); [ "$UID_IN" != 0 ] && [ "$UID_IN" != ? ] && pass "perintah berjalan sebagai non-root (uid $UID_IN)" || fail "berjalan sebagai root atau gagal ($UID_IN)"
-ok "pdf.js tersedia di public/vendor" "$(in_image 'test -f /app/public/vendor/pdfjs/pdf.min.mjs && echo ya || echo tidak')" ya
+ok "hasil build antarmuka ada di dist/ (halaman utama dan aset)" "$(in_image 'test -f /app/dist/display.html && ls /app/dist/assets/*.js >/dev/null 2>&1 && echo ya || echo tidak')" ya
+ok "image akhir tanpa alat build (vite tidak terpasang)" "$(in_image 'test -d /app/node_modules/vite && echo ada || echo tidak')" tidak
 ok "tar tersedia" "$(in_image 'command -v tar >/dev/null && echo ya || echo tidak')" ya
 ok "tidak ada .git, data, atau test di image" "$(in_image 'ls -A /app | grep -c -x -e .git -e data -e test -e docs -e deploy || true')" 0
-ok "hanya dependensi produksi (tanpa devDependencies)" "$(in_image 'cd /app && npm ls --omit=dev --depth=0 >/dev/null 2>&1; node -e "const p=require(\"./package.json\");console.log(Object.keys(p.devDependencies||{}).length)"')" 0
+ok "hanya dependensi produksi (vite dan pdfjs-dist, yang dibundel, tidak terpasang)" "$(in_image 'cd /app && ls node_modules | grep -c -x -e vite -e pdfjs-dist || true')" 0
 if has ffmpeg; then ok "ffmpeg tersedia" "$(in_image 'command -v ffmpeg >/dev/null && echo ya || echo tidak')" ya; else skip "ffmpeg tidak dipasang (APT_PACKAGES tanpa ffmpeg)"; fi
 if has ca-certificates; then ok "sertifikat CA tersedia (TLS push)" "$(in_image 'test -s /etc/ssl/certs/ca-certificates.crt && echo ya || echo tidak')" ya; else skip "ca-certificates tidak dipasang"; fi
 
@@ -104,11 +105,14 @@ docker volume create "$VOLUME" >/dev/null
 start_container "$NAME"
 if wait_healthy "$NAME" 60; then pass "status container 'healthy'"; else fail "container tidak sehat"; docker logs "$NAME" 2>&1 | tail -15; exit 1; fi
 ok "/healthz 200" "$(code "$BASE/healthz")" 200
-HDR=$(curl -s -D - -o /dev/null "$BASE/")
+HDR=$(curl -s --noproxy '*' -D - -o /dev/null "$BASE/")
 echo "$HDR" | grep -qi '^content-security-policy:.*script-src .self.;' && pass "CSP ketat pada halaman" || fail "CSP tidak ada"
 echo "$HDR" | grep -qi '^x-content-type-options: nosniff' && pass "nosniff pada halaman" || fail "nosniff tidak ada"
-CT=$(curl -s -D - -o /dev/null "$BASE/vendor/pdfjs/pdf.min.mjs" | tr -d '\r' | grep -i '^content-type:' || true)
-echo "$CT" | grep -qi 'javascript' && pass "pdf.js dilayani sebagai JavaScript" || fail "pdf.js tidak dilayani dengan benar: $CT"
+ASSET=$(curl -s --noproxy '*' "$BASE/" | grep -o 'src="/assets/[^"]*\.js"' | head -1 | sed 's/src="//; s/"$//')
+CT=$(curl -s --noproxy '*' -D - -o /dev/null "$BASE$ASSET" | tr -d '\r' | grep -i '^content-type:' || true)
+echo "$CT" | grep -qi 'javascript' && pass "aset JavaScript hasil build dilayani ($ASSET)" || fail "aset tidak dilayani dengan benar: '$ASSET' $CT"
+ok "jalur bersih /admin dan /kiosk menjawab 200" "$(code "$BASE/admin")$(code "$BASE/kiosk")" 200200
+ok "alamat lama /admin.html dialihkan 301" "$(code "$BASE/admin.html")" 301
 docker logs "$NAME" 2>&1 | grep -q 'Admin pertama dibuat' && pass "admin pertama dibuat dari ADMIN_PASSWORD" || fail "admin pertama tidak dibuat"
 
 # ---------------------------------------------------------------- 4. izin volume

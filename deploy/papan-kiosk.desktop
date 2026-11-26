@@ -5,5 +5,5 @@
 [Desktop Entry]
 Type=Application
 Name=Papan Informasi (kiosk)
-Exec=/opt/papan-informasi/deploy/kiosk-display.sh "http://SERVER:3000/?screen=lobi&sound=on"
+Exec=/opt/papan-informasi/deploy/kiosk-display.sh "http://SERVER:3000/layar/lobi?sound=on"
 X-GNOME-Autostart-enabled=true

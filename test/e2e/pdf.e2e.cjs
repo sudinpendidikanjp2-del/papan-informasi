@@ -31,7 +31,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
 
   // pdf.js gagal dimuat -> cadangan iframe
   const ctx2 = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
-  await ctx2.route('**/vendor/pdfjs/**', (r) => r.abort());
+  await ctx2.route('**/assets/pdf.min-*', (r) => r.abort());
   const q = await ctx2.newPage();
   await q.goto(B + '/', { waitUntil: 'load' });
   await q.click('#unlockBtn');

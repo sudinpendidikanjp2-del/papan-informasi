@@ -47,10 +47,15 @@ describe('header keamanan', () => {
     assert.equal((await h('/tidak-ada')).get('x-content-type-options'), 'nosniff');
   });
   it('tidak ada skrip inline di halaman HTML (CSP akan memblokirnya)', () => {
-    for (const f of fs.readdirSync(path.join(ROOT, 'public')).filter((x) => x.endsWith('.html'))) {
-      const html = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8');
-      assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/i.test(html), `${f} memuat skrip inline`);
-      assert.ok(!/\son[a-z]+\s*=\s*["']/i.test(html), `${f} memuat atribut penangan peristiwa inline`);
+    // Sumber (web/) dan hasil build (dist/): Vite tidak boleh menyisipkan skrip inline.
+    for (const dir of ['web', 'dist']) {
+      const files = fs.readdirSync(path.join(ROOT, dir)).filter((x) => x.endsWith('.html'));
+      assert.ok(files.length >= 5, `${dir} memuat halaman`);
+      for (const f of files) {
+        const html = fs.readFileSync(path.join(ROOT, dir, f), 'utf8');
+        assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/i.test(html), `${dir}/${f} memuat skrip inline`);
+        assert.ok(!/\son[a-z]+\s*=\s*["']/i.test(html), `${dir}/${f} memuat atribut penangan peristiwa inline`);
+      }
     }
   });
   it('SVG unggahan disajikan dengan CSP sandbox; PDF tanpa CSP (agar penampil PDF jalan)', async () => {

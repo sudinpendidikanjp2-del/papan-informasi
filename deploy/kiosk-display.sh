@@ -2,7 +2,7 @@
 # Membuka papan informasi dalam mode layar penuh (kiosk) dan membukanya kembali bila browser berhenti.
 # Cocok untuk Raspberry Pi OS, Ubuntu/Debian desktop, atau mini PC yang tersambung ke layar.
 #
-#   deploy/kiosk-display.sh "http://192.168.1.10:3000/?screen=lobi&sound=on"
+#   deploy/kiosk-display.sh "http://192.168.1.10:3000/layar/lobi?sound=on"
 #
 # Variabel opsional:
 #   KIOSK_PROFILE   folder profil browser khusus kiosk (default: ~/.config/papan-kiosk)
@@ -11,7 +11,7 @@ set -u
 
 URL="${1:-}"
 if [ -z "$URL" ]; then
-  echo "Penggunaan: $0 <alamat papan>, mis. $0 \"http://192.168.1.10:3000/?screen=lobi&sound=on\"" >&2
+  echo "Penggunaan: $0 <alamat papan>, mis. $0 \"http://192.168.1.10:3000/layar/lobi?sound=on\"" >&2
   exit 2
 fi
 

@@ -36,7 +36,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       const page = await browser.newPage({ viewport: { width: w, height: h } });
       page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
       page.on('console', (m) => { if (m.type() === 'error') errs.push(`console: ${m.text()}`); });
-      await page.goto(B + '/display.html?sound=on');
+      await page.goto(B + '/?sound=on');
       await page.waitForFunction((n) => document.querySelectorAll('#counters .ctr').length === n, total);
       await page.waitForTimeout(400);
       const r = await page.evaluate(() => {

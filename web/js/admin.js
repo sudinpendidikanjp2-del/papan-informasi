@@ -1,3 +1,6 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const I = window.Icons;
@@ -193,7 +196,7 @@
       ? screens.map((sc) =>
           '<div class="it"><div class="who"><span class="avatar sq">' + I.svg('monitor') + '</span><div><div class="n">' + esc(sc.name) + '</div>' +
           '<div class="s">' + (sc.categoryIds.length ? esc(names(sc.categoryIds, categories).join(', ')) : 'Semua kategori') + '</div></div></div>' +
-          '<a class="btn btn-ghost btn-sm linkbtn" target="_blank" rel="noopener" href="/?screen=' + encodeURIComponent(sc.slug) + '">Buka ' + I.svg('link') + '</a></div>').join('')
+          '<a class="btn btn-ghost btn-sm linkbtn" target="_blank" rel="noopener" href="/layar/' + encodeURIComponent(sc.slug) + '">Buka ' + I.svg('link') + '</a></div>').join('')
       : '<div class="empty">Belum ada layar terdaftar. Alamat <b>/</b> menampilkan semua antrian.</div>');
 
     const pct = s.ticketsToday ? Math.round((s.doneToday / s.ticketsToday) * 100) : 0;
@@ -452,7 +455,7 @@
     $('screensSub').textContent = '(' + screens.length + ')';
     $('screenRows').innerHTML = screens.length
       ? screens.map((s) => {
-          const url = '/?screen=' + encodeURIComponent(s.slug);
+          const url = '/layar/' + encodeURIComponent(s.slug);
           const cats = s.categoryIds.length
             ? s.categoryIds.map((id) => '<span class="pill">' + esc((categories.find((k) => k.id === id) || {}).name || '?') + '</span>').join('')
             : '<span class="muted">Semua kategori</span>';
@@ -727,7 +730,7 @@
       https = u.protocol === 'https:';
     } catch { /* alamat belum valid; ditolak server saat disimpan */ }
     const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host);
-    $('baseHint').innerHTML = 'Kode QR akan mengarah ke <b>' + esc(effective) + '/t.html</b>' +
+    $('baseHint').innerHTML = 'Kode QR akan mengarah ke <b>' + esc(effective) + '/antrian/…</b>' +
       (local ? '<br><span style="color:var(--red)">Alamat ini tidak bisa dibuka dari ponsel pengunjung. Isi dengan alamat IP atau nama server di jaringan, mis. http://192.168.1.10:3000.</span>' : '');
     $('pushHint').textContent = !f.push_enabled.checked
       ? 'Dimatikan. Halaman pantau tetap memberi peringatan suara dan getar selama dibuka.'
