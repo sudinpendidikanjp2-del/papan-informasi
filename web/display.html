@@ -40,11 +40,21 @@
     .slide .pdfbg { background: var(--blue-50); padding: 3.8rem 1.2rem 1.2rem; }
     .slide-empty { color: var(--muted); font-size: 1.5rem; }
 
-    /* Ukuran teks mengikuti panggung (satuan kontainer) agar mengisi ruang di 1366x768 sampai 4K. */
-    .slide-text { width: min(86%, 110rem); padding: 4cqmin; text-align: center; }
+    /* Ukuran teks mengikuti panggung (satuan kontainer) agar mengisi ruang di 1366x768 sampai 4K.
+       --fit (diatur skrip) memperkecil teks panjang sampai muat. */
+    .slide-text { --fit: 1; width: min(86%, 110rem); max-height: 100%; overflow: hidden; padding: 4cqmin; text-align: center; }
     .slide-text .bar { width: clamp(4rem, 9cqmin, 9rem); height: clamp(.3rem, .8cqmin, .7rem); border-radius: 1rem; background: var(--yellow); margin: 0 auto 4cqmin; }
-    .slide-text h2 { font-size: clamp(2.6rem, 9cqmin, 10rem); line-height: 1.1; letter-spacing: -.02em; color: var(--blue-700); margin-bottom: 3cqmin; text-wrap: balance; }
-    .slide-text p { font-size: clamp(1.5rem, 4.4cqmin, 5rem); line-height: 1.45; margin: 0; white-space: pre-line; color: var(--ink); text-wrap: pretty; }
+    .slide-text h2 { font-size: calc(clamp(2.6rem, 9cqmin, 10rem) * var(--fit)); line-height: 1.1; letter-spacing: -.02em; color: var(--blue-700); margin-bottom: 3cqmin; text-wrap: balance; }
+    .md { font-size: calc(clamp(1.5rem, 4.4cqmin, 5rem) * var(--fit)); line-height: 1.45; color: var(--ink); text-wrap: pretty; }
+    .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+    .md p { margin: 0 0 .6em; }
+    .md h1, .md h2, .md h3, .md h4 { color: var(--blue-700); line-height: 1.15; margin: .8em 0 .35em; }
+    .md h1 { font-size: 1.5em; } .md h2 { font-size: 1.3em; } .md h3 { font-size: 1.15em; } .md h4 { font-size: 1em; }
+    .md ul, .md ol { text-align: left; display: inline-block; margin: 0 0 .6em; padding-left: 1.3em; }
+    .md li { margin: .2em 0; }
+    .md blockquote { margin: .6em auto; padding: .2em 1em; border-left: .25em solid var(--yellow); background: var(--blue-50); border-radius: .4em; text-align: left; width: fit-content; max-width: 100%; }
+    .md hr { border: 0; height: .15em; background: var(--line-strong); margin: .8em auto; width: 40%; }
+    .md code { font-family: ui-monospace, Menlo, monospace; background: var(--blue-50); padding: .05em .3em; border-radius: .3em; }
 
     .slide .cd { position: absolute; left: 1.2rem; top: 1.2rem; z-index: 3; }
     /* Di atas latar terang pil perlu solid; versi transparan hanya cocok di atas kartu biru. */

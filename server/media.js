@@ -16,7 +16,7 @@ export const ffmpegAvailable = (() => {
 })();
 
 // Status job per nama berkas hasil. Berkas yang sudah ada di disk dianggap siap.
-const jobs = new Map(); // name -> { status: 'processing'|'error', error? }
+const jobs = new Map(); // name -> { status: 'processing'|'error', percent?, error? }
 const pending = [];
 let running = false;
 let current = null;       // proses ffmpeg yang sedang berjalan
@@ -37,7 +37,7 @@ export function assertReady(uploadDir, name) {
 }
 
 export function enqueueTranscode(srcPath, destPath, name) {
-  jobs.set(name, { status: 'processing' });
+  jobs.set(name, { status: 'processing', percent: 0 });
   pending.push({ srcPath, destPath, name });
   pump();
 }
@@ -50,18 +50,39 @@ function pump() {
   const { srcPath, destPath, name } = next;
   const tmp = destPath + '.part.mp4';
   const args = [
-    '-y', '-i', srcPath,
+    '-y', '-nostats', '-progress', 'pipe:1', '-i', srcPath,
     '-vf', "scale=-2:'min(1080,ih)'",
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',
     tmp,
   ];
-  const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const p = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   current = p;
   let tail = '';
+  let totalSec = 0; // durasi sumber, dibaca dari baris "Duration:" yang dicetak ffmpeg di awal
   p.stderr.on('data', (d) => {
-    tail = (tail + d.toString()).slice(-600);
+    const text = d.toString();
+    tail = (tail + text).slice(-600);
+    if (!totalSec) {
+      const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
+      if (m) totalSec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    }
+  });
+  // -progress pipe:1 mencetak blok "kunci=nilai" berkala; out_time_us adalah posisi hasil yang sudah ditulis.
+  let buf = '';
+  p.stdout.on('data', (d) => {
+    buf += d.toString();
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const m = /^out_time_(?:us|ms)=(\d+)/.exec(line);
+      if (m && totalSec > 0) {
+        const pct = Math.max(0, Math.min(99, Math.floor((Number(m[1]) / 1e6 / totalSec) * 100)));
+        const job = jobs.get(name);
+        if (job && job.status === 'processing' && pct > (job.percent || 0)) job.percent = pct;
+      }
+    }
   });
   const finish = (ok, message) => {
     running = false;

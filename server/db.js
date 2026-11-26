@@ -37,10 +37,11 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS contents (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf')),
+  type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf','youtube')),
   title       TEXT    NOT NULL DEFAULT '',
   body        TEXT    NOT NULL DEFAULT '',
   file        TEXT    NOT NULL DEFAULT '',
+  url         TEXT    NOT NULL DEFAULT '',
   duration    INTEGER NOT NULL DEFAULT 15,
   sort        INTEGER NOT NULL DEFAULT 0,
   active      INTEGER NOT NULL DEFAULT 1,
@@ -149,6 +150,40 @@ CREATE TABLE IF NOT EXISTS sessions (
 `);
 
 // Migrasi dari iterasi 1: catat pegawai yang melayani tiap antrian.
+// Basis data lama: tabel contents belum mengenal tipe 'youtube' dan kolom url. SQLite tidak bisa mengubah CHECK,
+// jadi tabel dibangun ulang (data utuh) di dalam transaksi dengan foreign_keys dimatikan sementara.
+{
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents'").get().sql;
+  if (!sql.includes("'youtube'")) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec(`CREATE TABLE contents_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf','youtube')),
+        title       TEXT    NOT NULL DEFAULT '',
+        body        TEXT    NOT NULL DEFAULT '',
+        file        TEXT    NOT NULL DEFAULT '',
+        url         TEXT    NOT NULL DEFAULT '',
+        duration    INTEGER NOT NULL DEFAULT 15,
+        sort        INTEGER NOT NULL DEFAULT 0,
+        active      INTEGER NOT NULL DEFAULT 1,
+        screensaver INTEGER NOT NULL DEFAULT 0
+      )`);
+      db.exec(`INSERT INTO contents_new (id, type, title, body, file, duration, sort, active, screensaver)
+               SELECT id, type, title, body, file, duration, sort, active, screensaver FROM contents`);
+      db.exec('DROP TABLE contents');
+      db.exec('ALTER TABLE contents_new RENAME TO contents');
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+
 // Panggil = melayani: status 'called' (alur dua langkah lama) digabung ke 'serving'. Aman diulang.
 db.exec("UPDATE tickets SET status = 'serving' WHERE status = 'called'");
 

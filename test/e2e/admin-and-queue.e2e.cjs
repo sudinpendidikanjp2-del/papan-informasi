@@ -82,6 +82,8 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   await a.reload(); await a.waitForSelector('#shell:visible'); // hash #content dipertahankan
   await a.waitForFunction(() => document.getElementById('page-content').classList.contains('on'));
   ok(true, 'admin: hash #content dipertahankan setelah reload');
+  ok((await a.locator('#contentRows tr').count()) === 11 && (await a.locator('#contentRows .grip').count()) === 11 && await a.isHidden('#contentPager button[data-p="2"]').catch(() => true), 'admin: tab Semua menampilkan seluruh baris dengan pegangan urutan, tanpa halaman');
+  await a.click('#contentTabs button[data-tab="text"]');
   ok((await a.locator('#contentRows tr').count()) === 8, 'admin: pagination 8 baris per halaman');
   await a.click('#contentPager button[data-p="2"]');
   ok((await a.locator('#contentRows tr').count()) === 3, 'admin: halaman 2 berisi sisa 3 baris');
@@ -94,7 +96,9 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
   await a.click('#addContent');
   await a.waitForSelector('#contentForm:visible');
   await a.fill('#contentForm [name=title]', 'Khusus B');
-  await a.fill('#contentForm [name=body]', 'Hanya layar B');
+  await a.waitForSelector('#mdEditor .ProseMirror');
+  await a.click('#mdEditor .ProseMirror');
+  await a.keyboard.type('Hanya layar B');
   await a.locator('#contentScreens label', { hasText: 'Layar B' }).locator('input').check();
   await a.click('#contentSave');
   await a.fill('#contentSearch', 'Khusus B');
@@ -117,7 +121,7 @@ const txt = async (p, sel) => (await p.textContent(sel)).replace(/\s+/g, ' ').tr
     await a.waitForSelector('#contentForm:visible');
     await a.selectOption('#ctype', type);
     await a.fill('#contentForm [name=title]', title);
-    await a.setInputFiles('#fileInput', file);
+    await a.setInputFiles('#fileDz input[type=file]', file);
     return extra;
   };
   await upl('pdf', FX + '/tiga-halaman.pdf', 'Dokumen PDF');

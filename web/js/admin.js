@@ -1,5 +1,9 @@
 import './icons.js';
 import './common.js';
+import Sortable from 'sortablejs';
+import { createDropzone, formatBytes } from './dropzone.js';
+import { uploadFile, watchConversion, formatEta, speedText } from './upload.js';
+import { parseYoutubeId, thumbnailUrl } from './youtube.js';
 
 (function () {
   const P = window.Papan;
@@ -12,7 +16,7 @@ import './common.js';
     dashboard: 'Dasbor', content: 'Konten', screens: 'Layar', queue: 'Kategori & meja',
     users: 'Pegawai', report: 'Laporan', settings: 'Pengaturan',
   };
-  const TYPE = { text: ['Teks', 'list'], image: ['Gambar', 'image'], video: ['Video', 'play'], pdf: ['PDF', 'edit'] };
+  const TYPE = { text: ['Teks', 'list'], image: ['Gambar', 'image'], video: ['Video', 'play'], pdf: ['PDF', 'file'], youtube: ['YouTube', 'youtube'] };
 
   let me = null;
   let summary = null;
@@ -243,6 +247,7 @@ import './common.js';
       ['image', 'Gambar', contents.filter((c) => c.type === 'image').length],
       ['video', 'Video', contents.filter((c) => c.type === 'video').length],
       ['pdf', 'PDF', contents.filter((c) => c.type === 'pdf').length],
+      ['youtube', 'YouTube', contents.filter((c) => c.type === 'youtube').length],
       ['screensaver', 'Screensaver', contents.filter((c) => c.screensaver).length],
     ];
     $('contentTabs').innerHTML = tabs.map(([k, l, n]) =>
@@ -256,8 +261,15 @@ import './common.js';
     sel.value = keep;
 
     const list = filteredContents();
-    cPage = clampPage(cPage, list.length, PER_PAGE);
-    const rows = list.slice((cPage - 1) * PER_PAGE, cPage * PER_PAGE);
+    // Urutan tayang diubah dengan seret-lepas hanya pada tampilan penuh (tab Semua, tanpa pencarian atau filter),
+    // supaya urutan yang disimpan selalu urutan seluruh daftar. Pada mode itu semua baris ditampilkan tanpa halaman.
+    const canOrder = cTab === 'all' && !cSearch.trim() && !cScreen && contents.length > 1;
+    if (canOrder) cPage = 1;
+    else cPage = clampPage(cPage, list.length, PER_PAGE);
+    const rows = canOrder ? list : list.slice((cPage - 1) * PER_PAGE, cPage * PER_PAGE);
+    $('orderHint').innerHTML = canOrder
+      ? I.svg('grip') + ' Seret ikon di kiri baris (atau tekan panah atas/bawah saat ikon difokuskan) untuk mengubah urutan tayang.'
+      : (contents.length > 1 ? 'Urutan hanya bisa diubah pada tab <b>Semua</b> tanpa pencarian atau filter.' : '');
 
     $('contentRows').innerHTML = rows.length
       ? rows.map((c) => {
@@ -265,12 +277,14 @@ import './common.js';
           const scr = c.screens.length
             ? c.screens.map((id) => '<span class="pill">' + esc((screens.find((s) => s.id === id) || {}).name || '?') + '</span>').join('')
             : '<span class="muted">Semua layar</span>';
-          const dur = c.type === 'video' && c.duration === 0 ? 'Sampai selesai'
+          const dur = (c.type === 'video' || c.type === 'youtube') && c.duration === 0 ? 'Sampai selesai'
+            : c.type === 'youtube' ? 'maks. ' + c.duration + ' dtk'
             : c.type === 'pdf' ? c.duration + ' dtk / hal.' : c.duration + ' dtk';
-          const title = c.title || (c.type === 'text' ? '(tanpa judul)' : c.file);
-          return '<tr class="' + (selected.has(c.id) ? 'sel' : '') + '">' +
+          const title = c.title || (c.type === 'text' ? '(tanpa judul)' : c.type === 'youtube' ? c.url : c.file);
+          return '<tr data-id="' + c.id + '" class="' + (selected.has(c.id) ? 'sel' : '') + '">' +
+            '<td class="grip-col">' + (canOrder ? '<span class="grip" tabindex="0" role="button" aria-label="Geser untuk mengubah urutan: ' + esc(title) + '">' + I.svg('grip') + '</span>' : '') + '</td>' +
             '<td class="chk"><input type="checkbox" data-sel="' + c.id + '"' + (selected.has(c.id) ? ' checked' : '') + ' aria-label="Pilih ' + esc(title) + '"></td>' +
-            '<td><div class="who"><span class="avatar sq">' + I.svg(ic) + '</span><div style="min-width:0"><div class="n">' + esc(title) + '</div><div class="s">' + tl + (c.sort ? ' · urutan ' + c.sort : '') + '</div></div></div></td>' +
+            '<td><div class="who"><span class="avatar sq">' + I.svg(ic) + '</span><div style="min-width:0"><div class="n">' + esc(title) + '</div><div class="s">' + tl + '' + '</div></div></div></td>' +
             '<td><div class="pills">' + scr + '</div></td>' +
             '<td>' + dur + '</td>' +
             '<td><div class="pills"><span class="pill ' + (c.active ? 'ok' : 'off') + '"><span class="dot"></span>' + (c.active ? 'Aktif' : 'Nonaktif') + '</span>' +
@@ -278,13 +292,57 @@ import './common.js';
             '<td><div class="acts"><button class="btn btn-ghost btn-sm btn-icon" data-edit="' + c.id + '" aria-label="Ubah">' + I.svg('edit') + '</button>' +
             '<button class="btn btn-danger btn-sm btn-icon" data-del="' + c.id + '" aria-label="Hapus">' + I.svg('trash') + '</button></div></td></tr>';
         }).join('')
-      : '<tr><td colspan="6" class="empty">' + (contents.length ? 'Tidak ada konten yang cocok dengan filter.' : 'Belum ada konten. Klik "Tambah konten".') + '</td></tr>';
+      : '<tr><td colspan="7" class="empty">' + (contents.length ? 'Tidak ada konten yang cocok dengan filter.' : 'Belum ada konten. Klik "Tambah konten".') + '</td></tr>';
 
     const all = $('contentAll');
     all.checked = rows.length > 0 && rows.every((c) => selected.has(c.id));
-    renderPager($('contentPager'), list.length, cPage, PER_PAGE, (p) => { cPage = p; renderContent(); }, 'konten');
+    if (canOrder) $('contentPager').innerHTML = '';
+    else renderPager($('contentPager'), list.length, cPage, PER_PAGE, (p) => { cPage = p; renderContent(); }, 'konten');
     renderBulk();
+    setupSortable(canOrder);
   }
+
+  // ----- Urutan: seret-lepas (SortableJS, mendukung sentuh) dan panah atas/bawah pada pegangan -----
+
+  let sortable = null;
+  function setupSortable(enabled) {
+    if (sortable) { sortable.destroy(); sortable = null; }
+    if (!enabled) return;
+    sortable = Sortable.create($('contentRows'), {
+      handle: '.grip',
+      animation: 150,
+      ghostClass: 'drag-ghost',
+      chosenClass: 'drag-chosen',
+      forceFallback: false,
+      onEnd: () => saveOrder([...$('contentRows').querySelectorAll('tr[data-id]')].map((r) => Number(r.dataset.id))),
+    });
+  }
+
+  async function saveOrder(ids) {
+    const before = contents.map((c) => c.id);
+    if (ids.length === before.length && ids.every((id, i) => id === before[i])) return;
+    const byId = new Map(contents.map((c) => [c.id, c]));
+    contents = ids.map((id) => byId.get(id));
+    try {
+      await P.api('/api/admin/content/reorder', { method: 'POST', body: { ids } });
+      P.toast('Urutan tayang disimpan');
+    } catch (e) {
+      P.toast(e.status === 409 ? 'Daftar konten berubah. Memuat ulang…' : 'Urutan gagal disimpan: ' + e.message);
+      await loadContents();
+    }
+  }
+
+  $('contentRows').addEventListener('keydown', (e) => {
+    const g = e.target.closest('.grip');
+    if (!g || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    const row = g.closest('tr');
+    const other = e.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+    if (!other || !other.dataset.id) return;
+    if (e.key === 'ArrowUp') row.parentNode.insertBefore(row, other); else row.parentNode.insertBefore(other, row);
+    g.focus();
+    saveOrder([...$('contentRows').querySelectorAll('tr[data-id]')].map((r) => Number(r.dataset.id)));
+  });
 
   function renderBulk() {
     $('bulkbar').classList.toggle('hidden', selected.size === 0);
@@ -341,7 +399,8 @@ import './common.js';
 
   // ----- Form konten -----
 
-  let pollTimer = null;
+  let stopConversion = null;
+  let cancelUpload = null;
   let busyFile = false; // unggahan atau konversi sedang berjalan
 
   function setFileStatus(html, busy) {
@@ -350,92 +409,174 @@ import './common.js';
     $('contentSave').disabled = !!busy;
   }
 
+  function progressHtml(label, pct, meta) {
+    return '<div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
+      '<div class="prog-top"><span>' + label + '</span><b>' + pct + '%</b></div>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      (meta ? '<div class="prog-meta">' + meta + '</div>' : '') + '</div>';
+  }
+
+  const FILE_RULES = {
+    image: { accept: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'], hint: 'JPG, PNG, GIF, WEBP, atau SVG. Maksimal 300 MB.' },
+    video: { accept: ['mp4', 'webm'], hint: 'MP4 atau WEBM. Video dikonversi ke MP4 (maks. 1080p) di server. Maksimal 300 MB.' },
+    pdf: { accept: ['pdf'], hint: 'Berkas PDF. Maksimal 300 MB.' },
+  };
+  let fileDz = null;
+  function buildFileDropzone(type) {
+    const rule = FILE_RULES[type];
+    if (!rule) { $('fileDz').innerHTML = ''; fileDz = null; return; }
+    fileDz = createDropzone($('fileDz'), {
+      accept: rule.accept, maxBytes: 300 * 1024 * 1024, icon: I.svg('upload', 'lg'),
+      title: 'Seret berkas ke sini', hint: rule.hint,
+      onReject: (m) => P.toast(m),
+      onFile: handleContentFile,
+    });
+  }
+
   function setType() {
     const t = $('ctype').value;
     $('bodyField').classList.toggle('hidden', t !== 'text');
-    $('fileField').classList.toggle('hidden', t === 'text');
-    $('durLabel').textContent = t === 'pdf' ? 'Durasi per halaman (detik)' : 'Durasi tampil (detik)';
+    $('ytField').classList.toggle('hidden', t !== 'youtube');
+    $('fileField').classList.toggle('hidden', t === 'text' || t === 'youtube');
+    $('durLabel').textContent = t === 'pdf' ? 'Durasi per halaman (detik)' : t === 'youtube' ? 'Durasi maksimum (detik)' : 'Durasi tampil (detik)';
     $('durHint').textContent = t === 'video' ? 'Isi 0 agar video tayang sampai selesai.'
+      : t === 'youtube' ? 'Item berganti saat video selesai; isi 0 agar tidak ada batas waktu.'
       : t === 'pdf' ? 'Setiap halaman PDF tampil sebanyak durasi ini, lalu berganti ke halaman berikutnya.' : '';
+    if (t !== 'text' && t !== 'youtube') buildFileDropzone(t);
+    if (t === 'text') ensureEditor();
   }
-  $('ctype').addEventListener('change', setType);
+  $('ctype').addEventListener('change', () => {
+    // Berkas yang sudah terunggah milik jenis lain tidak boleh terbawa.
+    if (busyFile) { $('ctype').value = lastType; return P.toast('Tunggu hingga unggahan atau konversi selesai'); }
+    lastType = $('ctype').value;
+    $('contentForm').elements.file.value = '';
+    setFileStatus('', false);
+    setType();
+  });
+  let lastType = 'text';
+
+  // ----- Editor markdown (Tiptap), dimuat malas -----
+
+  let mdEd = null;
+  let mdLoading = null;
+  let mdPending = '';
+  function ensureEditor() {
+    if (mdEd) return Promise.resolve(mdEd);
+    if (!mdLoading) {
+      mdLoading = import('./editor.js').then(({ createMarkdownEditor }) => {
+        $('mdEditor').innerHTML = '';
+        mdEd = createMarkdownEditor($('mdBar'), $('mdEditor'));
+        mdEd.setMarkdown(mdPending);
+        return mdEd;
+      }).catch((e) => {
+        mdLoading = null;
+        $('mdEditor').innerHTML = '<div class="status-line"><span class="pill bad">Editor gagal dimuat</span> ' + esc(e.message) + '</div>';
+        throw e;
+      });
+    }
+    return mdLoading;
+  }
+
+  createDropzone($('mdDz'), {
+    accept: ['md', 'markdown', 'txt'], maxBytes: 200 * 1024, icon: I.svg('file', 'lg'),
+    title: 'Seret berkas markdown (.md) ke sini', hint: 'Isinya ditambahkan ke editor. Maksimal 200 KB.',
+    onReject: (m) => P.toast(m),
+    onFile: async (file) => {
+      try {
+        let text = await file.text();
+        const f = $('contentForm').elements;
+        // Heading pertama (# Judul) menjadi judul konten bila judul masih kosong.
+        const h1 = /^\s*#\s+(.+?)\s*(?:\r?\n|$)/.exec(text);
+        if (h1 && !f.title.value.trim()) { f.title.value = h1[1].slice(0, 200); text = text.slice(h1[0].length); }
+        const ed = await ensureEditor();
+        ed.insertMarkdown(text.trim());
+        P.toast('Markdown diimpor: ' + file.name);
+      } catch { P.toast('Berkas markdown tidak dapat dibaca'); }
+    },
+  });
+
+  // ----- YouTube -----
+
+  function updateYtPreview() {
+    const v = $('contentForm').elements.url.value.trim();
+    const id = parseYoutubeId(v);
+    $('ytPreview').innerHTML = !v ? '' : id
+      ? '<img alt="" src="' + esc(thumbnailUrl(id)) + '"><div><b>Video dikenali</b><div class="muted">ID: ' + esc(id) + '</div></div>'
+      : '<span class="pill bad">Tautan belum dikenali</span> <span class="muted">Contoh: https://www.youtube.com/watch?v=…</span>';
+  }
+  $('contentForm').elements.url.addEventListener('input', updateYtPreview);
 
   function openContentForm(c) {
-    clearInterval(pollTimer);
+    if (stopConversion) { stopConversion(); stopConversion = null; }
+    if (cancelUpload) { cancelUpload(); cancelUpload = null; }
     const f = $('contentForm').elements;
     f.id.value = c ? c.id : '';
     f.type.value = c ? c.type : 'text';
+    lastType = f.type.value;
     f.title.value = c ? c.title : '';
-    f.body.value = c ? c.body : '';
+    mdPending = c && c.type === 'text' ? c.body : '';
+    if (mdEd) mdEd.setMarkdown(mdPending);
+    f.url.value = c && c.type === 'youtube' ? c.url : '';
     f.file.value = c ? c.file : '';
     f.duration.value = c ? c.duration : 15;
-    f.sort.value = c ? c.sort : 0;
     f.active.checked = c ? !!c.active : true;
     f.screensaver.checked = c ? !!c.screensaver : false;
-    $('fileInput').value = '';
+    $('ytOption').hidden = $('ytOption').disabled = !!(summary && summary.youtube === false);
     setFileStatus(c && c.file ? '<span class="muted">File saat ini: ' + esc(c.file) + '</span>' : '', false);
     checkboxes($('contentScreens'), screens, c ? c.screens : [], (s) => esc(s.name));
+    updateYtPreview();
     setType();
     openDrawer('contentForm', c ? 'Ubah konten' : 'Tambah konten');
   }
   $('addContent').addEventListener('click', () => openContentForm(null));
 
-  async function upload(file) {
-    return call('/api/admin/upload', {
-      method: 'POST',
-      headers: { 'x-filename': encodeURIComponent(file.name) },
-      body: file,
-    });
-  }
-
-  function pollVideo(name) {
-    clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      try {
-        const s = await P.api('/api/admin/upload/' + encodeURIComponent(name) + '/status');
-        if (s.status === 'ready') {
-          clearInterval(pollTimer);
-          setFileStatus('<span class="pill ok">' + I.svg('check') + 'Video siap</span>', false);
-        } else if (s.status === 'error') {
-          clearInterval(pollTimer);
-          $('contentForm').elements.file.value = '';
-          setFileStatus('<span class="pill bad">Gagal diproses</span> <span class="muted">' + esc(s.error || '') + '</span>', false);
-        } else if (s.status === 'missing') {
-          clearInterval(pollTimer);
-          setFileStatus('<span class="pill bad">Berkas hilang, unggah ulang</span>', false);
-        }
-      } catch { /* coba lagi pada tik berikutnya */ }
-    }, 1000);
-  }
-
-  $('fileInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    clearInterval(pollTimer);
-    setFileStatus('<span class="spin"></span>Mengunggah ' + esc(file.name) + '…', true);
+  async function handleContentFile(file) {
+    if (busyFile) return;
+    if (stopConversion) { stopConversion(); stopConversion = null; }
+    const f = $('contentForm').elements;
+    f.file.value = '';
+    setFileStatus(progressHtml('Mengunggah ' + esc(file.name), 0, formatBytes(file.size)), true);
+    fileDz && fileDz.setDisabled(true);
     try {
-      const r = await upload(file);
-      $('contentForm').elements.file.value = r.file;
+      const up = uploadFile(file, (p) => setFileStatus(
+        progressHtml('Mengunggah ' + esc(file.name), p.pct, formatBytes(p.loaded) + ' / ' + formatBytes(p.total) + ' · ' + speedText(p.speed) + (p.etaSec != null ? ' · ' + formatEta(p.etaSec) : '')), true));
+      cancelUpload = up.abort;
+      const r = await up;
+      cancelUpload = null;
+      f.file.value = r.file;
       if (r.status === 'processing') {
-        setFileStatus('<span class="spin"></span>Mengonversi video ke MP4… <span class="muted">(boleh menunggu, tombol Simpan aktif setelah selesai)</span>', true);
-        pollVideo(r.file);
+        const show = (pct) => setFileStatus(progressHtml('Mengonversi video ke MP4', pct, 'Boleh menunggu; tombol Simpan aktif setelah selesai.'), true);
+        show(0);
+        stopConversion = watchConversion(r.file, P.api, {
+          onPercent: show,
+          onDone: () => { setFileStatus('<span class="pill ok">' + I.svg('check') + 'Video siap</span> <span class="muted">' + esc(file.name) + '</span>', false); fileDz && fileDz.setDisabled(false); },
+          onError: (m) => { f.file.value = ''; setFileStatus('<span class="pill bad">Gagal diproses</span> <span class="muted">' + esc(m) + '</span>', false); fileDz && fileDz.setDisabled(false); },
+        });
       } else {
-        setFileStatus('<span class="pill ok">' + I.svg('check') + 'Terunggah</span> <span class="muted">' + esc(file.name) + '</span>' +
+        setFileStatus('<span class="pill ok">' + I.svg('check') + 'Terunggah</span> <span class="muted">' + esc(file.name) + ' · ' + formatBytes(file.size) + '</span>' +
           (r.warning ? ' <span class="pill warn">' + esc(r.warning) + '</span>' : ''), false);
+        fileDz && fileDz.setDisabled(false);
       }
-    } catch {
-      $('fileInput').value = '';
-      setFileStatus('<span class="pill bad">Unggahan gagal</span>', false);
+    } catch (e) {
+      cancelUpload = null;
+      if (e.status === 401) showLogin('Sesi berakhir. Silakan masuk lagi.');
+      setFileStatus('<span class="pill bad">Unggahan gagal</span> <span class="muted">' + esc(e.message) + '</span>', false);
+      fileDz && fileDz.setDisabled(false);
     }
-  });
+  }
 
   $('contentForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (busyFile) return P.toast('Tunggu hingga unggahan atau konversi selesai');
     const f = e.target.elements;
+    if (f.type.value === 'youtube' && !parseYoutubeId(f.url.value)) return P.toast('Tautan YouTube belum valid');
+    let bodyText = '';
+    if (f.type.value === 'text') {
+      try { bodyText = (await ensureEditor()).getMarkdown(); } catch { return P.toast('Editor belum siap'); }
+    }
     const body = {
-      type: f.type.value, title: f.title.value, body: f.body.value, file: f.file.value,
-      duration: Number(f.duration.value), sort: Number(f.sort.value),
+      type: f.type.value, title: f.title.value, body: bodyText, file: f.file.value, url: f.url.value.trim(),
+      duration: Number(f.duration.value),
       active: f.active.checked, screensaver: f.screensaver.checked,
       screens: checkedIds($('contentScreens')),
     };
@@ -761,16 +902,27 @@ import './common.js';
     applyBrand(s);
   }
 
-  $('logoInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const r = await upload(file);
-      $('settingsForm').elements.org_logo.value = r.url;
-      $('logoPreview').src = r.url;
-      $('logoPreview').style.visibility = 'visible';
-      P.toast('Logo terunggah. Klik Simpan pengaturan.');
-    } catch { /* ditangani */ }
+  createDropzone($('logoDz'), {
+    accept: ['png', 'jpg', 'jpeg', 'svg', 'webp'], maxBytes: 5 * 1024 * 1024, icon: I.svg('image', 'lg'),
+    title: 'Seret logo ke sini', hint: 'PNG, JPG, SVG, atau WEBP. Maksimal 5 MB.',
+    onReject: (m) => P.toast(m),
+    onFile: async (file) => {
+      const st = $('logoStatus');
+      st.innerHTML = '<div class="prog"><div class="prog-top"><span>Mengunggah ' + esc(file.name) + '</span><b>0%</b></div><div class="bar"><i style="width:0%"></i></div></div>';
+      try {
+        const r = await uploadFile(file, (p) => {
+          st.querySelector('b').textContent = p.pct + '%';
+          st.querySelector('i').style.width = p.pct + '%';
+        });
+        $('settingsForm').elements.org_logo.value = r.url;
+        $('logoPreview').src = r.url;
+        $('logoPreview').style.visibility = 'visible';
+        st.innerHTML = '<span class="pill ok">' + I.svg('check') + 'Terunggah</span> <span class="muted">Klik Simpan pengaturan.</span>';
+      } catch (e) {
+        if (e.status === 401) showLogin('Sesi berakhir. Silakan masuk lagi.');
+        st.innerHTML = '<span class="pill bad">Unggahan gagal</span> <span class="muted">' + esc(e.message) + '</span>';
+      }
+    },
   });
 
   $('settingsForm').addEventListener('submit', async (e) => {

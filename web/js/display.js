@@ -1,5 +1,7 @@
 import './icons.js';
 import './common.js';
+import { renderMarkdown } from './markdown.js';
+import { loadYouTubeApi } from './youtube.js';
 
 (function () {
   const P = window.Papan;
@@ -81,18 +83,22 @@ import './common.js';
     showItem(items[idx]);
   }
 
+  const itemSig = (it) => JSON.stringify([it.type, it.title, it.body, it.url, it.videoId, it.duration]);
+
   function showItem(it) {
     clearTimeout(unitTimer);
     token += 1;
     const my = token;
+    if (cur && cur.player) { try { cur.player.destroy(); } catch { /* sudah hilang */ } }
     const slide = $('slide');
     slide.innerHTML = '';
     $('trackerBox').classList.remove('hidden');
 
     cur = {
       item: it,
+      sig: itemSig(it),
       pdf: it.type === 'pdf',
-      untilEnded: it.type === 'video' && it.duration === 0,
+      untilEnded: (it.type === 'video' || it.type === 'youtube') && it.duration === 0,
       units: 1,
       unit: 0,
       unitMs: it.duration * 1000,
@@ -109,9 +115,14 @@ import './common.js';
     if (it.title && it.type !== 'text') slide.appendChild(el('div', 'ttl', P.esc(it.title)));
 
     if (it.type === 'text') {
-      slide.appendChild(el('div', 'slide-text',
-        '<div class="bar"></div><h2>' + P.esc(it.title) + '</h2><p>' + P.esc(it.body) + '</p>'));
+      // Isi pengumuman adalah markdown; renderMarkdown menyanitasi hasilnya (tanpa atribut, tautan, atau gambar).
+      const box = el('div', 'slide-text',
+        '<div class="bar"></div>' + (it.title ? '<h2>' + P.esc(it.title) + '</h2>' : '') + '<div class="md">' + renderMarkdown(it.body) + '</div>');
+      slide.appendChild(box);
+      fitText(box);
       startUnit();
+    } else if (it.type === 'youtube') {
+      showYoutube(it, my);
     } else if (it.type === 'image') {
       const f = el('div', 'fill');
       const img = document.createElement('img');
@@ -144,6 +155,59 @@ import './common.js';
       showPdf(it, my);
     } else {
       startUnit();
+    }
+  }
+
+  // Teks panjang diperkecil bertahap sampai muat di panggung (satu kali ukur saat ditampilkan).
+  function fitText(box) {
+    const stage = box.parentElement;
+    let scale = 1;
+    box.style.setProperty('--fit', '1');
+    for (let i = 0; i < 16 && box.offsetHeight > stage.clientHeight && scale > 0.3; i += 1) {
+      scale -= 0.05;
+      box.style.setProperty('--fit', scale.toFixed(2));
+    }
+  }
+
+  // ----- YouTube (IFrame API): berganti saat video selesai; durasi item menjadi batas maksimum -----
+
+  async function showYoutube(it, my) {
+    const f = el('div', 'fill');
+    const host = el('div');
+    f.appendChild(host);
+    $('slide').appendChild(f);
+    cur.loading = true;
+    const skip = (ms) => {
+      clearTimeout(unitTimer);
+      unitTimer = setTimeout(() => my === token && showNext(), ms);
+    };
+    // Pemutar yang tak kunjung siap (internet mati, video diblokir) dilewati agar papan tidak macet.
+    skip(15000);
+    try {
+      const YT = await loadYouTubeApi();
+      if (my !== token) return;
+      cur.player = new YT.Player(host, {
+        host: 'https://www.youtube-nocookie.com',
+        videoId: it.videoId,
+        width: '100%',
+        height: '100%',
+        playerVars: { autoplay: 1, mute: 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3, disablekb: 1, fs: 0, origin: location.origin },
+        events: {
+          onReady: (e) => {
+            if (my !== token) return;
+            e.target.mute();
+            e.target.playVideo();
+            cur.loading = false;
+            startUnit();
+          },
+          onStateChange: (e) => {
+            if (my === token && e.data === YT.PlayerState.ENDED) showNext();
+          },
+          onError: () => skip(1500),
+        },
+      });
+    } catch {
+      if (my === token) skip(5000);
     }
   }
 
@@ -304,8 +368,10 @@ import './common.js';
     buildTracker();
     const keep = items.findIndex((x) => x.id === prevId);
     if (keep >= 0) {
-      // Item aktif tidak diganggu; hitung mundur lanjut sampai habis.
+      // Item aktif tidak diganggu selama isinya sama; hitung mundur lanjut sampai habis. Bila admin mengubah
+      // isinya (judul, teks, tautan, durasi), item itu ditampilkan ulang agar perubahan langsung terlihat.
       idx = keep;
+      if (cur && cur.sig !== itemSig(items[idx])) showItem(items[idx]);
     } else {
       idx = -1;
       showNext();

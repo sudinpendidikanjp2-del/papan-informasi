@@ -251,7 +251,7 @@ async function adminApi(req, res, url, session) {
   };
 
   if (m === 'GET' && p === '/api/admin/summary') {
-    return send(res, 200, { ...svc.summary(), ffmpeg: media.ffmpegAvailable });
+    return send(res, 200, { ...svc.summary(), ffmpeg: media.ffmpegAvailable, youtube: YOUTUBE_ENABLED });
   }
 
   if (m === 'GET' && p === '/api/admin/content') return send(res, 200, svc.listContents());
@@ -276,6 +276,7 @@ async function adminApi(req, res, url, session) {
     return send(res, 200, r);
   }
   // Operasi massal dari bar aksi: { ids: [..], action: 'activate' | 'deactivate' | 'delete' }
+  if (m === 'POST' && p === '/api/admin/content/reorder') return send(res, 200, svc.reorderContents((await readJson(req)).ids));
   if (m === 'POST' && p === '/api/admin/content/bulk') return send(res, 200, bulkContent(await readJson(req)));
 
   if (m === 'POST' && p === '/api/admin/upload') {
@@ -484,15 +485,18 @@ function health(res) {
 
 // Kebijakan konten: skrip hanya dari asal sendiri (tanpa skrip inline), gaya inline diizinkan karena
 // atribut style dinamis dipakai di banyak tempat. Worker blob diperlukan sebagai cadangan pdf.js.
+// Konten YouTube butuh IFrame API (skrip dari youtube.com) dan pemutar di iframe. Hanya host YouTube yang dilonggarkan;
+// YOUTUBE=off mematikan jenis konten itu dan mengembalikan CSP ke 'self' saja.
+const YOUTUBE_ENABLED = String(process.env.YOUTUBE || 'on').toLowerCase() !== 'off';
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  YOUTUBE_ENABLED ? "script-src 'self' https://www.youtube.com" : "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  YOUTUBE_ENABLED ? "img-src 'self' data: blob: https://i.ytimg.com" : "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "connect-src 'self' ws: wss:",
   "worker-src 'self' blob:",
-  "frame-src 'self'",
+  YOUTUBE_ENABLED ? "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com" : "frame-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",

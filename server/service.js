@@ -479,19 +479,49 @@ export function snapshot(slug = null) {
 
 // ---------- Konten ----------
 
-const CONTENT_TYPES = ['text', 'image', 'video', 'pdf'];
+const CONTENT_TYPES = ['text', 'image', 'video', 'pdf', 'youtube'];
+export const MAX_BODY = 20000; // markdown pengumuman
 const CONTENT_EXT = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
   video: ['mp4', 'webm'],
   pdf: ['pdf'],
 };
 
+// ID video YouTube dari tautan watch, youtu.be, shorts, embed, atau live. Selain itu null.
+export function parseYoutubeId(input) {
+  let u;
+  try {
+    u = new URL(String(input || '').trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+  let id = null;
+  if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (u.pathname === '/watch') id = u.searchParams.get('v');
+    else {
+      const m = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?#]+)/);
+      if (m) id = m[1];
+    }
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+}
+
 function normalizeContent(b) {
   const type = CONTENT_TYPES.includes(b.type) ? b.type : null;
   if (!type) throw new HttpError(400, 'Jenis konten tidak valid');
   const duration = Math.max(0, Math.min(3600, parseInt(b.duration ?? 15, 10) || 0));
-  if (type !== 'text' && !b.file) throw new HttpError(400, 'File wajib diunggah untuk jenis ini');
-  if (type !== 'text') {
+  let link = '';
+  if (type === 'youtube') {
+    if (String(process.env.YOUTUBE || 'on').toLowerCase() === 'off') throw new HttpError(400, 'Konten YouTube dimatikan oleh administrator server (YOUTUBE=off)');
+    const id = parseYoutubeId(b.url);
+    if (!id) throw new HttpError(400, 'Tautan YouTube tidak valid. Gunakan tautan video (youtube.com/watch?v=…, youtu.be/…, shorts, atau embed).');
+    if (b.screensaver) throw new HttpError(400, 'Video YouTube tidak bisa dijadikan screensaver');
+    link = 'https://www.youtube.com/watch?v=' + id;
+  } else if (type !== 'text' && !b.file) throw new HttpError(400, 'File wajib diunggah untuk jenis ini');
+  if (type !== 'text' && type !== 'youtube') {
     // Nama berkas hanya boleh hasil unggahan (nama acak) dengan ekstensi yang cocok dengan jenis konten.
     const m = /^[a-f0-9]{20}\.([a-z0-9]{2,4})$/.exec(String(b.file));
     const allowed = CONTENT_EXT[type];
@@ -500,10 +530,11 @@ function normalizeContent(b) {
   return {
     type,
     title: String(b.title || '').slice(0, 200),
-    body: type === 'text' ? String(b.body || '').slice(0, 5000) : '',
-    file: type === 'text' ? '' : String(b.file),
-    duration: type === 'video' && duration === 0 ? 0 : Math.max(duration, type === 'text' ? 5 : 3),
-    sort: parseInt(b.sort ?? 0, 10) || 0,
+    body: type === 'text' ? String(b.body || '').slice(0, MAX_BODY) : '',
+    file: type === 'text' || type === 'youtube' ? '' : String(b.file),
+    url: link,
+    // 0 = sampai video selesai (video unggahan dan YouTube); selain itu batas minimum 3 detik (teks 5 detik).
+    duration: (type === 'video' || type === 'youtube') && duration === 0 ? 0 : Math.max(duration, type === 'text' ? 5 : 3),
     active: b.active === false || b.active === 0 ? 0 : 1,
     screensaver: b.screensaver ? 1 : 0,
   };
@@ -529,8 +560,9 @@ export function createContent(b) {
   const id = tx(() => {
     const info = db
       .prepare(
-        `INSERT INTO contents (type, title, body, file, duration, sort, active, screensaver)
-         VALUES (@type, @title, @body, @file, @duration, @sort, @active, @screensaver)`
+        `INSERT INTO contents (type, title, body, file, url, duration, sort, active, screensaver)
+         VALUES (@type, @title, @body, @file, @url, @duration,
+                 (SELECT COALESCE(MAX(sort), 0) + 1 FROM contents), @active, @screensaver)`
       )
       .run(c);
     const newId = Number(info.lastInsertRowid);
@@ -546,8 +578,8 @@ export function updateContent(id, b) {
   tx(() => {
     const r = db
       .prepare(
-        `UPDATE contents SET type=@type, title=@title, body=@body, file=@file, duration=@duration,
-                sort=@sort, active=@active, screensaver=@screensaver WHERE id=@id`
+        `UPDATE contents SET type=@type, title=@title, body=@body, file=@file, url=@url, duration=@duration,
+                active=@active, screensaver=@screensaver WHERE id=@id`
       )
       .run({ ...c, id });
     if (!r.changes) throw new HttpError(404, 'Konten tidak ditemukan');
@@ -574,6 +606,26 @@ export function bulkContent(b) {
   return { ok: true, count: ids.length, files };
 }
 
+// Urutan tayang dari drag-and-drop: daftar ID lengkap menurut urutan baru. Daftar yang tidak cocok dengan isi
+// tabel (mis. admin lain menambah atau menghapus konten) ditolak agar tidak menimpa perubahan orang lain.
+export function reorderContents(idsIn) {
+  const ids = (Array.isArray(idsIn) ? idsIn : []).map(Number);
+  if (!ids.length || ids.some((n) => !Number.isInteger(n)) || new Set(ids).size !== ids.length) {
+    throw new HttpError(400, 'Daftar urutan tidak valid');
+  }
+  const existing = db.prepare('SELECT id FROM contents').all().map((r) => r.id).sort((a, b) => a - b);
+  const given = [...ids].sort((a, b) => a - b);
+  if (existing.length !== given.length || existing.some((n, i) => n !== given[i])) {
+    throw new HttpError(409, 'Daftar konten berubah. Muat ulang halaman lalu coba lagi.');
+  }
+  tx(() => {
+    const up = db.prepare('UPDATE contents SET sort = ? WHERE id = ?');
+    ids.forEach((id, i) => up.run(i + 1, id));
+  });
+  bus.emit('content');
+  return { ok: true };
+}
+
 export function deleteContent(id) {
   db.prepare('DELETE FROM contents WHERE id = ?').run(id);
   bus.emit('content');
@@ -585,7 +637,7 @@ export function playlist(slug = null) {
   const screenId = slug ? screenRow(slug).id : null;
   const rows = db
     .prepare(
-      `SELECT c.id, c.type, c.title, c.body, c.file, c.duration, c.screensaver
+      `SELECT c.id, c.type, c.title, c.body, c.file, c.url AS link, c.duration, c.screensaver
          FROM contents c
         WHERE c.active = 1
           AND (NOT EXISTS (SELECT 1 FROM content_screens cs WHERE cs.content_id = c.id)
@@ -593,10 +645,10 @@ export function playlist(slug = null) {
         ORDER BY c.sort, c.id`
     )
     .all(screenId)
-    .map((r) => ({ ...r, url: r.file ? `/uploads/${r.file}` : '' }));
+    .map(({ link, ...r }) => ({ ...r, url: r.file ? `/uploads/${r.file}` : '', ...(r.type === 'youtube' ? { videoId: parseYoutubeId(link) } : {}) }));
   return {
     main: rows.filter((r) => !r.screensaver),
-    screensaver: rows.filter((r) => r.screensaver && r.type !== 'text'),
+    screensaver: rows.filter((r) => r.screensaver && r.type !== 'text' && r.type !== 'youtube'),
   };
 }
 
