@@ -20,7 +20,8 @@ export function createDropzone(root, opt) {
   root.innerHTML =
     '<div class="dz" tabindex="0" role="button" aria-label="' + esc(opt.title || 'Pilih berkas') + '">' +
     (opt.icon || '') +
-    '<div class="dz-t">' + esc(opt.title || 'Seret berkas ke sini') + ' <span class="dz-link">atau pilih dari komputer</span></div>' +
+    '<div class="dz-t"><span class="dz-desk">' + esc(opt.title || 'Seret berkas ke sini') + ' <span class="dz-link">atau pilih dari komputer</span></span>' +
+    '<span class="dz-touch"><span class="dz-link">Ketuk untuk memilih berkas</span></span></div>' +
     '<div class="dz-h">' + esc(opt.hint || '') + '</div>' +
     '<input type="file" hidden accept="' + accept.map((e) => '.' + e).join(',') + '"></div>';
   const box = root.querySelector('.dz');

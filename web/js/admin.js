@@ -984,4 +984,28 @@ import { parseYoutubeId, thumbnailUrl } from './youtube.js';
     if (!me || $('shell').classList.contains('hidden')) return;
     if (msg.type === 'queue' && page === 'dashboard') loadSummary().catch(() => {});
   });
+
+  // ---------- Tabel -> kartu di ponsel: label kolom dari <th> ----------
+
+  function labelTables() {
+    document.querySelectorAll('.tbl-wrap table').forEach((t) => {
+      const heads = t.tHead && t.tHead.rows[0] ? [...t.tHead.rows[0].cells].map((c) => c.textContent.trim()) : [];
+      for (const b of t.tBodies) {
+        for (const r of b.rows) {
+          [...r.cells].forEach((c, i) => {
+            if (c.colSpan > 1 || !heads[i]) delete c.dataset.label;
+            else if (c.dataset.label !== heads[i]) c.dataset.label = heads[i];
+          });
+        }
+      }
+    });
+  }
+  let labelQueued = false;
+  const labelObserver = new MutationObserver(() => {
+    if (labelQueued) return;
+    labelQueued = true;
+    requestAnimationFrame(() => { labelQueued = false; labelTables(); });
+  });
+  document.querySelectorAll('.tbl-wrap tbody, .tbl-wrap thead').forEach((el) => labelObserver.observe(el, { childList: true }));
+  labelTables();
 })();

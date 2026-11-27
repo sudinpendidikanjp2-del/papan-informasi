@@ -56,7 +56,7 @@ Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi
 - **Kategori**: layar hanya menampilkan antrian, meja, dan panggilan untuk kategori yang dipilih. Kosong berarti semua kategori.
 - **Konten**: tiap item konten bisa ditujukan ke layar tertentu. Item tanpa tujuan menjadi konten bersama yang tampil di semua layar.
 - **Screensaver**: waktu idle bisa diatur per layar. Idle dihitung dari aktivitas antrian pada kategori layar itu saja.
-- **Mode layar**: sakelar *Tampilkan antrian di layar ini*. Dimatikan, layar menjadi **papan informasi saja**: panggung penuh tanpa kartu antrian, meja, panggilan, bel, atau suara. Pengunjung yang menggerakkan kursor atau menyentuh layar melihat **daftar informasi di sisi kiri**; selama itu durasi tayang **dimatikan sementara** (penghitung menunjukkan "Dijeda"), mengklik judul melompat ke informasi itu (PDF punya tombol halaman sebelumnya/berikutnya), dan setelah tidak ada gerakan selama *lanjut otomatis* (default 20 detik, 5-600) daftar menutup dan tayangan lanjut dengan durasi penuh.
+- **Mode layar**: sakelar *Tampilkan antrian di layar ini*. Dimatikan, layar menjadi **papan informasi saja**: panggung penuh tanpa kartu antrian, meja, panggilan, bel, atau suara. Pengunjung yang menggerakkan kursor atau menyentuh layar melihat **daftar informasi di sisi kiri** (konten bergeser, tidak tertutup); selama itu durasi tayang **dimatikan sementara** (penghitung menunjukkan "Dijeda"), mengklik judul melompat ke informasi itu (PDF punya tombol halaman sebelumnya/berikutnya), dan setelah tidak ada gerakan selama *lanjut otomatis* (default 20 detik, 5-600) daftar menutup dan tayangan lanjut dengan durasi penuh.
 - Alamat `/` tanpa parameter menampilkan semua antrian dan **hanya** konten bersama.
 - Slug yang belum didaftarkan tetap menampilkan konten bersama, disertai peringatan di layar.
 
@@ -105,13 +105,24 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 - Jenis konten: **teks**, **gambar**, **video**, **PDF**, dan **YouTube**. Setiap item tampil selama durasi yang diatur, lalu berganti otomatis. Pil hitung mundur tampil di pojok, dan penanda progres bersegmen di bawahnya menunjukkan posisi dalam playlist.
 - **Video**: durasi 0 berarti tayang sampai video selesai. Bila `ffmpeg` tersedia, video yang diunggah dikonversi ke MP4 H.264/AAC (tinggi maks 1080, `faststart`) agar terputar di browser layar mana pun. Konversi berjalan satu per satu di latar belakang; tombol Simpan aktif setelah selesai. Tanpa `ffmpeg`, video disimpan apa adanya dan dasbor menampilkan peringatan.
 - **YouTube**: tempel tautan video (`youtube.com/watch?v=`, `youtu.be/`, `shorts/`, `embed/`). Diputar lewat IFrame API (host `youtube-nocookie.com`), **dibisukan dan tanpa kontrol**; item berganti saat video selesai, dan durasi menjadi batas maksimum (0 = sampai selesai). Butuh internet di perangkat papan; bila pemutar tidak termuat atau video tidak bisa disematkan, item dilewati. CSP hanya dilonggarkan untuk host YouTube (`YOUTUBE=off` mematikannya). Tidak bisa dipakai sebagai screensaver.
-- **Teks (markdown)**: isi teks ditulis dengan editor Tiptap (judul, tebal, miring, daftar, kutipan, garis) dan disimpan sebagai **markdown**. Berkas `.md` dapat diimpor (seret ke kotak impor; heading pertama menjadi judul bila judul kosong) dan teks markdown yang ditempel otomatis diformat. Di papan hasilnya disanitasi (HTML mentah, tautan, dan gambar dibuang) dan teks panjang diperkecil agar muat.
+- **Teks (markdown)**: isi teks ditulis dengan editor Tiptap (judul, tebal, miring, daftar, kutipan, garis) dan disimpan sebagai **markdown**. Berkas `.md` dapat diimpor (seret ke kotak impor; heading pertama menjadi judul bila judul kosong) dan teks markdown yang ditempel otomatis diformat. Di papan hasilnya disanitasi (HTML mentah, tautan, dan gambar dibuang). **Teks panjang muat bertahap**: diperkecil sampai batas terbaca (±60%), lalu dibagi **dua kolom** di layar lebar, lalu bila masih terpotong **digulir otomatis** pelan dari atas ke bawah selama durasi tayang; di layar interaktif pengunjung bisa menggulir manual saat tayangan dijeda.
 - **Urutan tayang**: seret ikon di kiri baris (atau panah atas/bawah pada ikon yang difokuskan) di tab *Semua*; urutan langsung tersimpan.
 - **Unggah**: area seret-lepas (*dropzone*) untuk berkas konten, logo, dan markdown, dengan bilah progres unggah (persen, kecepatan, sisa waktu) dan **persen konversi video** yang dibaca dari ffmpeg.
 - **PDF**: tampil per halaman (pdf.js). Durasi berarti **detik per halaman**. Bila pdf.js gagal dimuat, dokumen tampil lewat penampil bawaan browser selama satu kali durasi.
 - Screensaver berjalan saat tidak ada aktivitas antrian **dan** tidak ada gerakan kursor, sentuhan, atau tombol selama waktu *idle* yang diatur; ia **hilang begitu kursor digerakkan** atau layar disentuh. Screensaver memakai item yang ditandai "screensaver" (gambar atau video).
 - Berkas unggahan yang tidak lagi dipakai dihapus otomatis (saat konten dihapus atau diganti, dan penyapuan tiap jam untuk berkas yatim yang berumur lebih dari satu jam).
 - Admin dapat memilih beberapa konten sekaligus untuk diaktifkan, dinonaktifkan, atau dihapus lewat bar aksi massal.
+
+## Tampilan mobile dan tablet
+
+Semua halaman dapat dipakai di ponsel dan tablet; tampilan TV tidak berubah.
+
+- **Papan** (`/`, `/layar/<slug>`): pada lebar ≤ 820 px (ponsel dan tablet potret) menjadi **satu kolom yang dapat digulir**: kartu *Sedang dipanggil*, lalu konten (teks dikecilkan agar muat), lalu daftar meja dan panggilan terakhir. Layar *hanya informasi*: daftar pilihan menjadi **lembar bawah** yang dibuka dengan mengetuk tombol *Daftar* (atau layar) dan ditutup dengan × atau otomatis setelah diam.
+- **Admin**: sidebar menjadi laci; **tabel menjadi kartu bertumpuk** berlabel di ≤ 720 px; laci formulir penuh layar dengan tombol Simpan menempel di bawah; bar aksi massal, editor markdown (bilah alat dapat digeser), dropzone ("Ketuk untuk memilih berkas"), tab, dan filter menyesuaikan lebar layar. Pada perangkat sentuh semua tombol bertinggi ≥ 44 px dan kolom isian berfont 16 px (iOS tidak memperbesar halaman).
+- **Kiosk, panel meja, halaman pantau**: memakai tinggi `dvh` dan area aman (*notch*), kartu kategori kiosk menyusut hingga 320 px, panel meja satu kolom aksi di layar sangat sempit dan navigasi bawah ringkas di ponsel landscape.
+- **Tablet landscape** memakai tata letak TV dengan teks dasar minimal 14 px.
+
+Diuji otomatis (`test/e2e/mobile.e2e.cjs`) pada profil iPhone 13/SE, Pixel 7, iPad Mini, 320 px, dan ponsel landscape: tanpa gulir horizontal, tanpa elemen melewati tepi layar, target sentuh dan font kolom, urutan tata letak papan, lembar bawah, kartu tabel, dan laci. Perangkat nyata (khususnya Safari iOS) belum diuji.
 
 ## Notifikasi pengunjung
 
