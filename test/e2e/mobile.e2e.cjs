@@ -87,37 +87,40 @@ const clean = async (p, tag) => {
 
   const browser = await chromium.launch();
 
-  // ---------- Papan dengan antrian: ponsel potret ----------
+  // ---------- Papan dengan antrian: ponsel potret (konten tinggi, kotak informasi 2 kolom, kartu antrian mengambang) ----------
   for (const [name, label] of [['iPhone 13', 'iPhone 13'], ['Pixel 7', 'Pixel 7'], ['iPhone SE', 'iPhone SE']]) {
     const ctx = await browser.newContext(dev(name));
     const p = await ctx.newPage(); watch(p, 'papan-' + label);
     await p.goto(B + '/layar/lobi?sound=on');
     await p.waitForSelector('.slide-text h2');
-    await p.waitForSelector('#counters .ctr');
+    await p.waitForSelector('#qgrid .qc');
     await p.waitForTimeout(600);
     const g = await p.evaluate(() => {
       const r = (s) => document.querySelector(s).getBoundingClientRect();
       const cs = getComputedStyle(document.body);
+      const q = r('#qcard');
       return {
-        hero: r('#nowPanel').top, stage: r('.stage').top, desks: r('.desks').top, slideH: r('#slide').height, vw: innerWidth, vh: innerHeight,
+        stage: r('#slide'), grid: r('#infoGrid'), q, vw: innerWidth, vh: innerHeight,
         docH: document.documentElement.scrollHeight, overflow: cs.overflow + '/' + getComputedStyle(document.documentElement).overflow,
-        ctr: [...document.querySelectorAll('#counters .ctr')].map((e) => e.getBoundingClientRect().width),
-        panelW: r('.desks').width, cols: getComputedStyle(document.getElementById('counters')).gridTemplateColumns.split(' ').length,
-        heroInView: r('#nowPanel').bottom <= innerHeight,
+        queueHidden: getComputedStyle(document.querySelector('.queue')).display === 'none',
+        cols: getComputedStyle(document.getElementById('infoGrid')).gridTemplateColumns.split(' ').length,
+        igs: document.querySelectorAll('#infoGrid .ig').length,
+        on: (document.querySelector('#infoGrid .ig.on .n') || {}).textContent,
+        now: document.querySelector('#qnow .qn').textContent, cells: document.querySelectorAll('#qgrid .qc').length,
+        qCols: getComputedStyle(document.getElementById('qgrid')).gridTemplateColumns.split(' ').length,
+        head: document.querySelector('.head').getBoundingClientRect().bottom,
       };
     });
-    ok(g.hero < g.stage && g.stage < g.desks, `${label}: urutan hero -> konten -> meja (${Math.round(g.hero)}, ${Math.round(g.stage)}, ${Math.round(g.desks)})`);
-    ok(g.heroInView || g.hero < g.vh / 2, `${label}: kartu panggilan terlihat tanpa menggulir jauh`);
-    ok(g.docH > g.vh, `${label}: halaman dapat digulir (${g.docH} > ${g.vh})`);
+    ok(g.stage.height >= g.vh * 0.4 && g.grid.top > g.stage.bottom, `${label}: konten tinggi (${Math.round(g.stage.height)} px) dan kotak informasi di bawahnya`);
+    ok(g.queueHidden, `${label}: hero dan kartu meja lama tidak tampil di alur halaman`);
+    ok(g.cols === 2 && g.igs === 3 && g.on === 'Selamat Datang', `${label}: kotak informasi 2 kolom memuat 3 item, yang tayang disorot`);
+    ok(g.q.left <= 16 && Math.abs(g.q.top - (g.head + 8)) <= 3 && g.q.right <= g.vw && g.q.width <= g.vw * 0.65, `${label}: kartu antrian mengambang di kiri atas di bawah header, tidak melebihi 65% lebar`);
+    ok(/^A-\d+$/.test(g.now) && g.qCols === 2 && g.cells >= 3, `${label}: kartu memuat nomor terakhir (${g.now}) dan kisi meja 2 kolom (${g.cells} meja)`);
     ok(!/hidden/.test(g.overflow), `${label}: tidak mengunci gulir (${g.overflow})`);
-    ok(g.cols === 1 && g.ctr.every((w) => w >= g.panelW * 0.8), `${label}: daftar meja satu kolom selebar kartu`);
-    ok(g.slideH >= g.vw * 0.55 && g.slideH <= g.vw * 0.9, `${label}: panggung berbentuk ±16:10 (${Math.round(g.slideH)} px)`);
     const fit = await p.evaluate(() => { const b = document.querySelector('.slide-text'); const s = document.getElementById('slide'); const cd = document.getElementById('cd').getBoundingClientRect(); const h2 = b.querySelector('h2').getBoundingClientRect(); return b.scrollHeight <= s.clientHeight + 2 && h2.top >= cd.bottom - 1; });
     ok(fit, `${label}: teks pengumuman muat di panggung dan tidak tertutup pil hitung mundur`);
     await clean(p, `papan ${label}`);
-    if (label === 'iPhone 13') {
-      await p.screenshot({ path: SHOTS + '/m-board-top.png' });
-    }
+    if (label === 'iPhone 13') await p.screenshot({ path: SHOTS + '/m-board-top.png' });
     await ctx.close();
   }
 
@@ -125,9 +128,9 @@ const clean = async (p, tag) => {
   {
     const ctx = await browser.newContext(dev('iPad Mini'));
     const p = await ctx.newPage(); watch(p, 'papan-ipad');
-    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#counters .ctr'); await p.waitForTimeout(500);
-    const order = await p.evaluate(() => [document.querySelector('#nowPanel').getBoundingClientRect().top, document.querySelector('.stage').getBoundingClientRect().top, document.querySelector('.desks').getBoundingClientRect().top]);
-    ok(order[0] < order[1] && order[1] < order[2], `iPad potret: tata letak satu kolom (${order.map(Math.round).join(', ')})`);
+    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#qgrid .qc'); await p.waitForTimeout(500);
+    const o = await p.evaluate(() => ({ q: document.getElementById('qcard').getBoundingClientRect().width, vw: innerWidth, cols: getComputedStyle(document.getElementById('infoGrid')).gridTemplateColumns.split(' ').length }));
+    ok(o.cols === 2 && o.q <= 17 * 15 + 2 && o.q < o.vw * 0.5, `iPad potret: kotak 2 kolom dan kartu antrian ringkas (${Math.round(o.q)} px)`);
     await clean(p, 'papan iPad potret');
     await p.screenshot({ path: SHOTS + '/m-board-ipad.png' });
     await ctx.close();
@@ -136,33 +139,87 @@ const clean = async (p, tag) => {
     await q.goto(B + '/layar/lobi?sound=on'); await q.waitForSelector('#counters .ctr'); await q.waitForTimeout(500);
     const two = await q.evaluate(() => getComputedStyle(document.querySelector('.body')).gridTemplateColumns.split(' ').length);
     ok(two === 2 && (await q.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))) >= 14, 'tablet landscape 1024x768: tata letak TV dua kolom dengan teks dasar >= 14 px');
+    ok(await q.isHidden('#qcard') && await q.isHidden('#qfab') && await q.isHidden('#infoGrid'), 'tablet landscape: kartu mengambang dan kotak informasi tidak ada (tata letak TV)');
     const noScroll = await q.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1);
     ok(noScroll, 'tablet landscape: papan tetap muat satu layar tanpa gulir');
     await q.screenshot({ path: SHOTS + '/m-board-tablet-landscape.png' });
     await ctx2.close();
   }
 
-  // ---------- Papan tanpa antrian: lembar bawah ----------
+  // ---------- Kartu antrian: perkecil, panggilan baru, ingat status, seret ke sudut ----------
+  {
+    const ctx = await browser.newContext(dev('iPhone 13'));
+    const p = await ctx.newPage(); watch(p, 'qcard');
+    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#qgrid .qc'); await p.waitForTimeout(500);
+    const before = await p.textContent('#qnow .qn');
+    await p.tap('#qmin');
+    await p.waitForSelector('#qfab', { state: 'visible' });
+    ok(await p.isHidden('#qcard') && (await p.textContent('#qfabNum')) === before, `diperkecil: kartu menjadi tombol bulat berisi nomor terakhir (${before})`);
+    const fab = await p.evaluate(() => { const r = document.getElementById('qfab').getBoundingClientRect(); return { w: r.width, h: r.height }; });
+    ok(fab.h >= 40 && fab.w >= 40 && fab.w <= 100, `tombol cukup besar untuk disentuh (${Math.round(fab.w)}x${Math.round(fab.h)})`);
+    await p.screenshot({ path: SHOTS + '/m-qfab.png' });
+    // Status diperkecil bertahan setelah muat ulang
+    await p.reload(); await p.waitForSelector('#qfab', { state: 'visible' });
+    ok(await p.isHidden('#qcard'), 'status diperkecil diingat setelah muat ulang');
+    // Antrian baru: kartu muncul lagi dengan nomor baru
+    await call('post', '/api/tickets', { categoryId: 1 });
+    const nr = await call('post', '/api/counter/2/next');
+    await p.waitForSelector('#qcard', { state: 'visible', timeout: 8000 });
+    const after = await p.textContent('#qnow .qn');
+    ok(after !== before && /^A-\d+$/.test(after) && await p.isHidden('#qfab'), `panggilan baru membuka kartu lagi dengan nomor ${after} (sebelumnya ${before})` + (nr.s === 200 ? '' : ' [api ' + nr.s + ']'));
+    ok(await p.evaluate(() => document.getElementById('qcard').classList.contains('flash')), 'kartu berdenyut sebagai penanda panggilan baru');
+    await p.waitForTimeout(400);
+    await p.screenshot({ path: SHOTS + '/m-qcard-new.png' });
+    await ctx.close();
+  }
+  // Seret memakai mouse (membalik emulasi pointer: coarse), jadi dijalankan di konteks terpisah.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: false, hasTouch: false });
+    const p = await ctx.newPage(); watch(p, 'qdrag');
+    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#qgrid .qc'); await p.waitForTimeout(500);
+    const box = async (s) => p.evaluate((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; }, s);
+    const c0 = await box('#qcard');
+    // Seret pegangan (nomor besar) ke kanan bawah
+    await p.mouse.move(c0.l + 30, c0.t + 30); await p.mouse.down();
+    await p.mouse.move(c0.l + 120, c0.t + 200, { steps: 8 });
+    await p.mouse.move(340, 780, { steps: 8 });
+    const mid = await box('#qcard');
+    ok(mid.r <= 390 && mid.b <= 844 && mid.l >= 0 && mid.t >= 0, 'selama diseret, kartu tetap di dalam layar');
+    await p.mouse.up();
+    await p.waitForTimeout(450);
+    const c1 = await box('#qcard');
+    ok(c1.l > 390 / 2 - c1.w / 2 && Math.abs(c1.r - (390 - 12)) <= 2 && Math.abs(c1.b - (844 - 12)) <= 2, `dilepas: kartu menempel di sudut kanan bawah (${Math.round(c1.r)}, ${Math.round(c1.b)})`);
+    const saved = await p.evaluate(() => JSON.parse(localStorage.getItem('papan.qcard.lobi') || '{}'));
+    ok(saved.c === 'br', 'sudut tersimpan di perangkat: ' + saved.c);
+    await p.reload(); await p.waitForSelector('#qgrid .qc'); await p.waitForTimeout(500);
+    const c2 = await box('#qcard');
+    ok(Math.abs(c2.r - c1.r) <= 2 && Math.abs(c2.b - c1.b) <= 2, 'posisi sudut bertahan setelah muat ulang');
+    // Ketukan pada pegangan tanpa seret tidak memindahkan kartu
+    await p.mouse.click(c2.l + 40, c2.t + 40);
+    await p.waitForTimeout(350);
+    const c3 = await box('#qcard');
+    ok(Math.abs(c3.l - c2.l) <= 1 && Math.abs(c3.t - c2.t) <= 1, 'ketukan tanpa seret tidak menggeser kartu');
+    await p.screenshot({ path: SHOTS + '/m-qcard-br.png' });
+    await ctx.close();
+  }
+
+  // ---------- Papan tanpa antrian: kotak informasi ----------
   {
     const ctx = await browser.newContext(dev('iPhone 13'));
     const p = await ctx.newPage(); watch(p, 'info-hp');
     await p.goto(B + '/layar/info');
     await p.waitForSelector('.slide-text h2');
-    ok(await p.isVisible('#browseBtn'), 'layar info (ponsel): tombol "Daftar" mengambang tampil');
-    ok(await p.isHidden('.queue'), 'layar info (ponsel): tanpa kolom antrian');
-    await p.tap('#browseBtn');
-    await p.waitForSelector('.browse.open');
-    await p.waitForTimeout(450);
-    const sheet = await p.evaluate(() => { const r = document.getElementById('browse').getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom, vw: innerWidth, vh: innerHeight, items: document.querySelectorAll('#browseList .bi').length, fab: getComputedStyle(document.getElementById('browseBtn')).display }; });
-    ok(sheet.l <= 1 && sheet.r >= sheet.vw - 1 && Math.abs(sheet.b - sheet.vh) <= 2, 'lembar bawah selebar layar dan menempel di dasar');
-    ok(sheet.items === 3 && sheet.fab === 'none', 'lembar memuat 3 informasi dan tombol mengambang tersembunyi saat terbuka');
-    await p.screenshot({ path: SHOTS + '/m-info-sheet.png' });
-    await p.locator('#browseList .bi', { hasText: 'Pengumuman' }).tap();
+    await p.waitForSelector('#infoGrid .ig');
+    ok(await p.isHidden('.queue') && await p.isHidden('#qcard') && await p.isHidden('#qfab'), 'layar info (ponsel): tanpa kolom antrian dan tanpa kartu antrian mengambang');
+    ok(await p.isHidden('#browse') && !(await p.locator('#browseBtn').count()), 'layar info (ponsel): tanpa lembar bawah dan tombol "Daftar" lama');
+    ok((await p.locator('#infoGrid .ig').count()) === 3, 'kotak informasi memuat 3 item');
+    ok(/\d+ dtk/.test(await p.textContent('#cdText')), 'tanpa interaksi tayangan berjalan normal (hitung mundur)');
+    await p.screenshot({ path: SHOTS + '/m-info-grid.png' });
+    await p.locator('#infoGrid .ig', { hasText: 'Pengumuman' }).tap();
     await p.waitForFunction(() => (document.querySelector('.slide-text h2') || {}).textContent === 'Pengumuman');
-    ok(await p.evaluate(() => document.getElementById('cdText').textContent === 'Dijeda'), 'mengetuk judul melompat ke informasi itu dan tayangan dijeda');
-    await p.tap('#browseClose');
-    await p.waitForFunction(() => !document.querySelector('.browse.open'));
-    ok(await p.isVisible('#browseBtn') && /\d+ dtk|Video/.test(await p.textContent('#cdText')), 'tombol tutup menutup lembar, tayangan lanjut, tombol mengambang kembali');
+    ok(await p.evaluate(() => document.getElementById('cdText').textContent === 'Dijeda' && document.querySelector('#infoGrid .ig.on .n').textContent === 'Pengumuman'), 'mengetuk kartu melompat ke informasi itu, tayangan dijeda, kartu disorot');
+    await p.waitForFunction(() => document.getElementById('cdText').textContent !== 'Dijeda', null, { timeout: 12000 });
+    ok(/\d+ dtk|Video/.test(await p.textContent('#cdText')), 'setelah resumeSeconds tanpa interaksi tayangan lanjut otomatis');
     await clean(p, 'papan info ponsel');
     await ctx.close();
   }
@@ -283,7 +340,7 @@ const clean = async (p, tag) => {
   {
     const ctx = await browser.newContext(dev('iPhone 13'));
     const p = await ctx.newPage();
-    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#counters .ctr'); await p.waitForTimeout(500);
+    await p.goto(B + '/layar/lobi?sound=on'); await p.waitForSelector('#qgrid .qc'); await p.waitForTimeout(500);
     await p.screenshot({ path: SHOTS + '/m-board-full.png', fullPage: true });
     await p.goto(B + '/kiosk'); await p.waitForSelector('.cat'); await p.waitForTimeout(400);
     await p.screenshot({ path: SHOTS + '/m-kiosk.png', fullPage: true });
