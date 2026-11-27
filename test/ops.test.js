@@ -290,3 +290,30 @@ describe('backup dan restore', { skip: !haveTar && 'tar tidak tersedia' }, () =>
     });
   });
 });
+
+describe('direktori data tidak dapat ditulis', () => {
+  const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  const haveSetpriv = spawnSync('setpriv', ['--version']).status === 0;
+  const canTest = asRoot ? haveSetpriv : typeof process.getuid === 'function';
+  it('keluar kode 1 dengan pesan yang bisa ditindaklanjuti, bukan tumpukan galat SQLite', { skip: !canTest && 'tidak bisa meniru pengguna non-root' }, () => {
+    const d = tmpDir('ro-');
+    fs.chmodSync(d, 0o755); // milik pengguna tes (atau root)
+    const code = `await import(${JSON.stringify(path.join(ROOT, 'server/db.js'))})`;
+    const args = ['--input-type=module', '-e', code];
+    // Sebagai root: jalankan sebagai uid 65534 pada direktori milik root. Non-root: cabut izin tulis.
+    let r;
+    if (asRoot) {
+      r = spawnSync('setpriv', ['--reuid=65534', '--regid=65534', '--clear-groups', process.execPath, ...args], { encoding: 'utf8', env: { ...NODE_ENV, DATA_DIR: d } });
+    } else {
+      fs.chmodSync(d, 0o555);
+      r = spawnSync(process.execPath, args, { encoding: 'utf8', env: { ...NODE_ENV, DATA_DIR: d } });
+    }
+    fs.chmodSync(d, 0o755);
+    rm(d);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /Tidak dapat memakai direktori data/);
+    assert.match(r.stderr, /uid \d+/);
+    assert.match(r.stderr, /chown -R 1000:1000/);
+    assert.doesNotMatch(r.stderr, /ERR_SQLITE_ERROR/);
+  });
+});

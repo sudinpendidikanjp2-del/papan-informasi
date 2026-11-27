@@ -125,9 +125,11 @@
             <div class="search"><span data-ic="search"></span><input id="contentSearch" placeholder="Cari judul atau berkas…" aria-label="Cari konten"></div>
             <select id="contentScreenFilter" aria-label="Filter layar"></select>
           </div>
+          <div class="order-hint" id="orderHint"></div>
           <div class="tbl-wrap">
             <table>
               <thead><tr>
+                <th class="grip-col"><span class="sr-only">Urutan</span></th>
                 <th class="chk"><input type="checkbox" id="contentAll" aria-label="Pilih semua di halaman ini"></th>
                 <th>Konten</th><th>Layar</th><th>Durasi</th><th>Status</th><th></th>
               </tr></thead>
@@ -145,7 +147,7 @@
           </div>
           <div class="tbl-wrap">
             <table>
-              <thead><tr><th>Layar</th><th>Alamat</th><th>Kategori</th><th>Idle</th><th></th></tr></thead>
+              <thead><tr><th>Layar</th><th>Alamat</th><th>Mode</th><th>Kategori</th><th>Idle</th><th></th></tr></thead>
               <tbody id="screenRows"></tbody>
             </table>
           </div>
@@ -218,7 +220,8 @@
                 <div class="section-title">Identitas</div>
                 <div class="field"><label>Nama instansi</label><input name="org_name" maxlength="120"></div>
                 <div class="field"><label>Logo (PNG atau SVG transparan)</label>
-                  <div class="row"><img id="logoPreview" class="thumb" alt="Pratinjau logo"><input type="file" id="logoInput" accept=".png,.jpg,.jpeg,.svg,.webp" style="flex:1"></div>
+                  <div class="row" style="flex-wrap:nowrap"><img id="logoPreview" class="thumb" alt="Pratinjau logo"><div id="logoDz" style="flex:1;min-width:0"></div></div>
+                  <div class="status-line" id="logoStatus"></div>
                   <input type="hidden" name="org_logo">
                 </div>
                 <div class="field"><label>Zona waktu</label>
@@ -269,19 +272,32 @@
         <input type="hidden" name="id">
         <div class="field"><label>Jenis</label>
           <select name="type" id="ctype">
-            <option value="text">Teks</option><option value="image">Gambar</option><option value="video">Video</option><option value="pdf">PDF</option>
+            <option value="text">Teks</option><option value="image">Gambar</option><option value="video">Video</option><option value="pdf">PDF</option><option value="youtube" id="ytOption">YouTube</option>
           </select>
         </div>
         <div class="field"><label>Judul</label><input name="title" maxlength="200"></div>
-        <div class="field" id="bodyField"><label>Isi teks</label><textarea name="body" rows="4" maxlength="5000"></textarea></div>
+        <div class="field" id="bodyField">
+          <label>Isi teks <span class="muted" style="font-weight:400">(markdown)</span></label>
+          <div class="md-editor">
+            <div class="md-bar" id="mdBar" role="toolbar" aria-label="Format teks"></div>
+            <div class="md-area" id="mdEditor"><div class="muted" style="padding:12px">Memuat editor…</div></div>
+          </div>
+          <div id="mdDz"></div>
+          <span class="hint">Judul, tebal, miring, daftar, kutipan, dan garis. Menempel teks markdown otomatis diformat; atau impor berkas .md di bawah (menambah ke isi editor).</span>
+        </div>
+        <div class="field hidden" id="ytField">
+          <label>Tautan YouTube</label>
+          <input name="url" type="url" maxlength="300" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+          <div class="yt-prev" id="ytPreview"></div>
+          <span class="hint">Butuh internet di perangkat papan. Video diputar tanpa suara dan tanpa kontrol; item berganti saat video selesai (durasi = batas maksimum, 0 = sampai selesai).</span>
+        </div>
         <div class="field hidden" id="fileField">
-          <label>File (JPG, PNG, GIF, WEBP, SVG, MP4, WEBM, PDF; maks 300 MB)</label>
-          <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,.mp4,.webm,.pdf">
+          <label>File <span class="muted" style="font-weight:400">(JPG, PNG, GIF, WEBP, SVG, MP4, WEBM, PDF; maks 300 MB)</span></label>
+          <div id="fileDz"></div>
           <input type="hidden" name="file">
           <div class="status-line" id="fileStatus"></div>
         </div>
         <div class="field"><label id="durLabel">Durasi tampil (detik)</label><input name="duration" type="number" min="0" max="3600" value="15"><span class="hint" id="durHint"></span></div>
-        <div class="field"><label>Urutan (kecil tampil dulu)</label><input name="sort" type="number" value="0"></div>
         <div class="field"><label>Tampil di layar <span class="muted" style="font-weight:400">(kosongkan semua = semua layar)</span></label><div class="checks" id="contentScreens"></div></div>
         <label class="switch"><span><div class="t">Aktif</div></span><input type="checkbox" name="active" checked><span class="track"></span></label>
         <label class="switch"><span><div class="t">Juga jadi screensaver</div><div class="d">Hanya gambar dan video</div></span><input type="checkbox" name="screensaver"><span class="track"></span></label>
@@ -292,9 +308,11 @@
       <form id="screenForm" class="hidden">
         <input type="hidden" name="id">
         <div class="field"><label>Nama layar</label><input name="name" maxlength="80" required placeholder="Lobi utama"></div>
-        <div class="field"><label>Slug</label><input name="slug" maxlength="40" required pattern="[a-z0-9\-]{1,40}" placeholder="lobi"><span class="hint">Huruf kecil, angka, dan tanda hubung. Alamat layar: /?screen=slug</span></div>
+        <div class="field"><label>Slug</label><input name="slug" maxlength="40" required pattern="[a-z0-9\-]{1,40}" placeholder="lobi"><span class="hint">Huruf kecil, angka, dan tanda hubung. Alamat layar: /layar/slug</span></div>
         <div class="field"><label>Idle sebelum screensaver (menit)</label><input name="idleMinutes" type="number" min="1" max="120" placeholder="Ikut pengaturan umum"></div>
-        <div class="field"><label>Kategori yang ditampilkan <span class="muted" style="font-weight:400">(kosongkan semua = semua)</span></label><div class="checks" id="screenCats"></div></div>
+        <label class="switch"><span><div class="t">Tampilkan antrian di layar ini</div><div class="d">Matikan agar layar hanya menjadi papan informasi: tanpa nomor antrian dan suara, pengunjung bisa memilih informasi dengan menggerakkan kursor atau menyentuh layar.</div></span><input type="checkbox" name="showQueue" id="showQueue" checked><span class="track"></span></label>
+        <div class="field" id="resumeField"><label>Lanjut otomatis setelah (detik tanpa gerakan)</label><input name="resumeSeconds" type="number" min="5" max="600" placeholder="20"><span class="hint">Selama pengunjung menggerakkan kursor atau menyentuh layar, durasi tayang dihentikan sementara. Bila diam selama ini, tayangan dilanjutkan.</span></div>
+        <div class="field" id="screenCatsField"><label>Kategori yang ditampilkan <span class="muted" style="font-weight:400">(kosongkan semua = semua)</span></label><div class="checks" id="screenCats"></div></div>
         <div class="dfoot"><button class="btn btn-ghost" type="button" data-close>Batal</button><button class="btn" type="submit">Simpan</button></div>
       </form>
 
@@ -340,8 +358,6 @@
     <button class="btn btn-icon" id="bulkClear" aria-label="Batalkan pilihan"><span data-ic="x"></span></button>
   </div>
 
-  <script src="/js/icons.js"></script>
-  <script src="/js/common.js"></script>
-  <script src="/js/admin.js"></script>
+  <script type="module" src="/js/admin.js"></script>
 </body>
 </html>

@@ -36,19 +36,19 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
 
   // QR: isinya persis URL pantau dengan alamat dasar dari admin
   const svg = await (await api.get(`/api/ticket/${t[2].token}/qr.svg`)).text();
-  const q = qrcode(0, 'M'); q.addData(`http://192.168.1.10:3000/t.html?k=${t[2].token}`); q.make();
+  const q = qrcode(0, 'M'); q.addData(`http://192.168.1.10:3000/antrian/${t[2].token}`); q.make();
   ok(svg === q.createSvgTag({ cellSize: 8, margin: 2, scalable: true }), 'QR memuat tepat URL pantau (alamat dasar dari admin)');
   ok((await api.get('/api/ticket/' + '0'.repeat(24) + '/qr.svg')).status() === 404, 'QR untuk tiket tak dikenal = 404');
   const sw = await api.get('/sw.js');
   ok(sw.status() === 200 && /javascript/.test(sw.headers()['content-type']), 'sw.js disajikan sebagai JavaScript');
-  ok((await api.get('/t.html')).headers()['referrer-policy'] === 'no-referrer', 'halaman pantau mengirim Referrer-Policy: no-referrer');
+  ok((await api.get('/antrian/abc123def456')).headers()['referrer-policy'] === 'no-referrer', 'halaman pantau mengirim Referrer-Policy: no-referrer');
 
   const browser = await chromium.launch();
 
   // ===== Kiosk: slip memuat QR =====
   const kctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const k = await kctx.newPage(); watch(k, 'kiosk');
-  await k.goto(B + '/kiosk.html'); await k.waitForSelector('.cat');
+  await k.goto(B + '/kiosk'); await k.waitForSelector('.cat');
   await k.locator('.cat', { hasText: 'Administrasi' }).click();
   await k.waitForSelector('#overlay:not(.hidden)');
   await k.waitForFunction(() => document.getElementById('qr').complete && document.getElementById('qr').naturalWidth > 0);
@@ -65,7 +65,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
     AC.prototype.createOscillator = function () { window.__osc++; return orig.call(this); };
   });
   const ph = await pctx.newPage(); watch(ph, 'ponsel');
-  await ph.goto(`${B}/t.html?k=${t[2].token}`);
+  await ph.goto(`${B}/antrian/${t[2].token}`);
   await ph.waitForSelector('#ticket:visible');
   ok((await txt(ph, '#label')) === 'A-003' && (await txt(ph, '#ahead')) === '2', 'ponsel: nomor A-003 dengan 2 orang di depan');
   ok(await ph.isVisible('#nearBanner'), 'ponsel: banner "hampir giliran" tampil (2 <= ambang 3)');
@@ -93,36 +93,51 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('called'));
   ok((await txt(ph, '#callBox')).includes('Silakan menuju Meja 1'), 'ponsel: "Silakan menuju Meja 1"');
   ok(await ph.evaluate((n) => window.__osc > n, oscBefore), 'ponsel: bel berbunyi saat dipanggil');
-  ok(await ph.evaluate((n) => window.__vib.length > n && window.__vib.some((v) => v.includes('600')), vibBefore), 'ponsel: perangkat bergetar dengan pola panjang saat dipanggil');
+  ok(await ph.evaluate((n) => window.__vib.length > n && window.__vib.some((v) => v.includes('800')), vibBefore), 'ponsel: perangkat bergetar dengan pola panjang saat dipanggil');
   await ph.waitForFunction(() => document.title.includes('Giliran Anda'), null, { timeout: 4000 });
   ok(true, 'ponsel: judul tab berkedip "Giliran Anda!"');
   await ph.screenshot({ path: SHOTS + '/e4-phone-called.png' });
+
+  // Getar berulang selama belum ditandai "sudah menuju meja"
+  const pat = () => ph.evaluate(() => window.__vib.filter((v) => v.startsWith('[400')).length);
+  ok(await ph.isVisible('#ack'), 'ponsel: tombol "Saya sudah menuju meja" tampil saat dipanggil');
+  const p1 = await pat();
+  await ph.waitForTimeout(8000);
+  const p2 = await pat();
+  ok(p2 - p1 >= 2, `ponsel: getar berulang selama belum ditandai (${p1} -> ${p2} dalam 8 dtk)`);
+  await ph.click('#ack');
+  await ph.waitForTimeout(500);
+  const p3 = await pat();
+  await ph.waitForTimeout(5000);
+  ok((await pat()) === p3 && await ph.isHidden('#ack'), 'ponsel: getar berhenti setelah diketuk "sudah menuju meja"');
 
   // Panggil ulang -> bunyi lagi
   const osc2 = await ph.evaluate(() => window.__osc);
   await post('/api/counter/1/recall', {}); // calledAt berubah
   await ph.waitForFunction((n) => window.__osc > n, osc2, { timeout: 5000 });
   ok(true, 'ponsel: panggil ulang membunyikan peringatan lagi');
+  await ph.waitForFunction((n) => window.__vib.filter((v) => v.startsWith('[400')).length > n, p3, { timeout: 5000 });
+  ok(await ph.isVisible('#ack'), 'ponsel: panggil ulang memulai getar berulang lagi');
 
   // Selesai
-  await post('/api/counter/1/start', {}); await fin();
+  await fin();
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('finished'));
   ok((await txt(ph, '#finishBox')).includes('Terima kasih') && await ph.isHidden('#alerts'), 'ponsel: pesan terima kasih, kartu peringatan disembunyikan');
   await ph.screenshot({ path: SHOTS + '/e4-phone-done.png' });
 
   // Dilewati: tiket A-004 lalu Skip
   const ph4 = await pctx.newPage(); watch(ph4, 'ponsel2');
-  await ph4.goto(`${B}/t.html?k=${t[3].token}`); await ph4.waitForSelector('#ticket:visible');
+  await ph4.goto(`${B}/antrian/${t[3].token}`); await ph4.waitForSelector('#ticket:visible');
   await call(); await post('/api/counter/1/skip', {});
   await ph4.waitForFunction(() => document.getElementById('hero').classList.contains('finished'));
   ok((await txt(ph4, '#finishBox')).includes('dilewati'), 'ponsel: tiket dilewati mendapat arahan mengambil nomor baru');
 
   // Tautan tidak valid / tidak dikenal / kedaluwarsa
   const bad1 = await pctx.newPage(); watch(bad1, 'bad1');
-  await bad1.goto(B + '/t.html?k=bukan-token');
+  await bad1.goto(B + '/antrian/bukan-token');
   ok((await txt(bad1, '#missTitle')) === 'Tautan tidak valid', 'ponsel: tautan tidak valid ditolak tanpa memanggil server');
   const bad2 = await pctx.newPage(); watch(bad2, 'bad2');
-  await bad2.goto(B + '/t.html?k=' + 'a'.repeat(24));
+  await bad2.goto(B + '/antrian/' + 'a'.repeat(24));
   await bad2.waitForFunction(() => document.getElementById('missTitle').textContent.includes('tidak ditemukan'));
   ok(true, 'ponsel: token tidak dikenal menampilkan "tidak ditemukan"');
 
@@ -137,7 +152,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   // ===== Admin: pengaturan notifikasi =====
   const actx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const a = await actx.newPage(); watch(a, 'admin');
-  await a.goto(B + '/admin.html#settings');
+  await a.goto(B + '/admin#settings');
   await a.fill('#u', 'admin'); await a.fill('#p', 'rahasia123'); await a.click('#loginForm button');
   await a.waitForSelector('#page-settings.on');
   await a.fill('#settingsForm [name=public_base_url]', '');

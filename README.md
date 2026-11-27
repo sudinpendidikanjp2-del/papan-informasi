@@ -11,12 +11,13 @@ Butuh Node.js 22.13 atau lebih baru. `ffmpeg` bersifat opsional (untuk mengonver
 
 ```bash
 npm install
+npm run build      # membangun antarmuka (Vite) ke dist/; wajib sebelum npm start
 ADMIN_USERNAME="admin" ADMIN_PASSWORD="ganti-dengan-password-kuat" npm start
 ```
 
-Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
+Lalu buka `http://localhost:3000/admin` dan masuk dengan akun tersebut.
 
-- `npm install` juga menyalin pustaka pdf.js ke `public/vendor/pdfjs` (skrip `postinstall`). Folder itu diabaikan git, jadi jalankan `npm install` di setiap salinan baru.
+- Antarmuka ditulis di `web/` dan dibangun Vite ke `dist/` (diabaikan git); server menyajikan `dist/`. Selama pengembangan jalankan `npm run dev` (server Vite di :5173 dengan proxy ke server di :3000). `npm test` dan `npm run test:e2e` membangun ulang otomatis. Alamat lama berakhiran `.html` dan `/?screen=` dialihkan 301 ke jalur baru.
 - Admin pertama dibuat **hanya saat belum ada pengguna sama sekali**. Mengubah `ADMIN_PASSWORD` setelahnya tidak berpengaruh; ganti password lewat halaman Pegawai.
 - Jika `ADMIN_PASSWORD` tidak diset, server membuat password acak dan mencetaknya satu kali di konsol. Password minimal 8 karakter.
 
@@ -31,6 +32,7 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 | `TRUST_PROXY` | `1` bila di belakang reverse proxy tepercaya (lihat bagian HTTPS) |
 | `HOST` | Antarmuka yang didengarkan, mis. `127.0.0.1` di belakang reverse proxy (default: semua) |
 | `TICKET_RATE` | Batas pengambilan nomor per alamat per menit di kiosk (default 30) |
+| `YOUTUBE` | `off` mematikan jenis konten YouTube dan mengembalikan CSP ke `'self'` saja (default `on`) |
 | `WS_MAX_PER_IP` | Batas koneksi WebSocket per alamat (default 100) |
 | `VAPID_SUBJECT` | Subjek VAPID untuk notifikasi push (`mailto:` atau `https:`), opsional |
 
@@ -38,30 +40,32 @@ Lalu buka `http://localhost:3000/admin.html` dan masuk dengan akun tersebut.
 
 | Halaman | URL | Pengguna |
 |---|---|---|
-| Papan informasi | `/?screen=<slug>` | Layar publik (buka dalam mode kiosk/layar penuh). Tambah `&sound=on` pada perangkat kiosk yang browsernya berflag autoplay (lihat panduan penerapan) |
-| Kiosk ambil nomor | `/kiosk.html` | Pengunjung (layar sentuh) |
-| Pantau antrian | `/t.html?k=<token>` | Pengunjung, lewat QR di slip nomor |
-| Panel meja | `/operator.html` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
-| Admin | `/admin.html` | Admin: dasbor, konten, layar, kategori, meja, pegawai, laporan, pengaturan |
+| Papan informasi | `/layar/<slug>` (atau `/` untuk semua) | Layar publik (buka dalam mode kiosk/layar penuh). Tambah `?sound=on` pada perangkat kiosk yang browsernya berflag autoplay (lihat panduan penerapan) |
+| Kiosk ambil nomor | `/kiosk` | Pengunjung (layar sentuh) |
+| Pantau antrian | `/antrian/<token>` | Pengunjung, lewat QR di slip nomor |
+| Panel meja | `/operator` | Pegawai: login, pilih meja, panggil, pindahkan, buat nomor, riwayat |
+| Admin | `/admin` | Admin: dasbor, konten, layar, kategori, meja, pegawai, laporan, pengaturan |
 
-Desain mengikuti satu sistem (`public/css/app.css`): biru dominan, kartu putih berborder tipis, kuning hanya sebagai sorotan kecil.
+Desain mengikuti satu sistem (`web/css/app.css`): biru dominan, kartu putih berborder tipis, kuning hanya sebagai sorotan kecil.
 Papan dirancang landscape dan skalanya mengikuti lebar layar (diperiksa di 1366×768 sampai 4K). Panel meja dan admin responsif sampai layar ponsel.
 
 ## Banyak layar
 
-Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi`), lalu dibuka di perangkatnya lewat `/?screen=lobi`.
+Setiap layar didaftarkan di halaman **Layar** dengan nama dan *slug* (mis. `lobi`), lalu dibuka di perangkatnya lewat `/layar/lobi`.
 
 - **Kategori**: layar hanya menampilkan antrian, meja, dan panggilan untuk kategori yang dipilih. Kosong berarti semua kategori.
 - **Konten**: tiap item konten bisa ditujukan ke layar tertentu. Item tanpa tujuan menjadi konten bersama yang tampil di semua layar.
 - **Screensaver**: waktu idle bisa diatur per layar. Idle dihitung dari aktivitas antrian pada kategori layar itu saja.
+- **Mode layar**: sakelar *Tampilkan antrian di layar ini*. Dimatikan, layar menjadi **papan informasi saja**: panggung penuh tanpa kartu antrian, meja, panggilan, bel, atau suara. Pengunjung yang menggerakkan kursor atau menyentuh layar melihat **daftar informasi di sisi kiri**; selama itu durasi tayang **dimatikan sementara** (penghitung menunjukkan "Dijeda"), mengklik judul melompat ke informasi itu (PDF punya tombol halaman sebelumnya/berikutnya), dan setelah tidak ada gerakan selama *lanjut otomatis* (default 20 detik, 5-600) daftar menutup dan tayangan lanjut dengan durasi penuh.
 - Alamat `/` tanpa parameter menampilkan semua antrian dan **hanya** konten bersama.
 - Slug yang belum didaftarkan tetap menampilkan konten bersama, disertai peringatan di layar.
 
 ## Login pegawai
 
 - Admin membuat akun di halaman **Pegawai** (username, password, peran) dan mencentang meja yang boleh dipakai pegawai itu.
-- Pegawai login di `/operator.html`, memilih satu meja dari daftar yang diizinkan, lalu bekerja di meja itu. Satu meja hanya bisa dipegang satu pegawai pada satu waktu.
-- Pegawai tidak bisa keluar atau berpindah meja selama masih memegang antrian yang dipanggil atau sedang dilayani.
+- Pegawai login di `/operator`, memilih satu meja dari daftar yang diizinkan, lalu bekerja di meja itu. Satu meja hanya bisa dipegang satu pegawai pada satu waktu.
+- **Memanggil nomor berarti langsung melayaninya**: tidak ada tombol "Mulai layani". Alurnya menunggu → dilayani (saat dipanggil) → selesai atau dilewati.
+- Pegawai tidak bisa keluar atau berpindah meja selama masih memegang antrian yang sedang dilayani.
 - Antrian mencatat pegawai yang melayani, dan laporan harian menampilkan jumlah per pegawai.
 - Peran `admin` boleh membuka panel meja mana pun.
 
@@ -98,16 +102,22 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 
 ## Konten & screensaver
 
-- Jenis konten: **teks**, **gambar**, **video**, **PDF**. Setiap item tampil selama durasi yang diatur, lalu berganti otomatis. Pil hitung mundur tampil di pojok, dan penanda progres bersegmen di bawahnya menunjukkan posisi dalam playlist.
+- Jenis konten: **teks**, **gambar**, **video**, **PDF**, dan **YouTube**. Setiap item tampil selama durasi yang diatur, lalu berganti otomatis. Pil hitung mundur tampil di pojok, dan penanda progres bersegmen di bawahnya menunjukkan posisi dalam playlist.
 - **Video**: durasi 0 berarti tayang sampai video selesai. Bila `ffmpeg` tersedia, video yang diunggah dikonversi ke MP4 H.264/AAC (tinggi maks 1080, `faststart`) agar terputar di browser layar mana pun. Konversi berjalan satu per satu di latar belakang; tombol Simpan aktif setelah selesai. Tanpa `ffmpeg`, video disimpan apa adanya dan dasbor menampilkan peringatan.
+- **YouTube**: tempel tautan video (`youtube.com/watch?v=`, `youtu.be/`, `shorts/`, `embed/`). Diputar lewat IFrame API (host `youtube-nocookie.com`), **dibisukan dan tanpa kontrol**; item berganti saat video selesai, dan durasi menjadi batas maksimum (0 = sampai selesai). Butuh internet di perangkat papan; bila pemutar tidak termuat atau video tidak bisa disematkan, item dilewati. CSP hanya dilonggarkan untuk host YouTube (`YOUTUBE=off` mematikannya). Tidak bisa dipakai sebagai screensaver.
+- **Teks (markdown)**: isi teks ditulis dengan editor Tiptap (judul, tebal, miring, daftar, kutipan, garis) dan disimpan sebagai **markdown**. Berkas `.md` dapat diimpor (seret ke kotak impor; heading pertama menjadi judul bila judul kosong) dan teks markdown yang ditempel otomatis diformat. Di papan hasilnya disanitasi (HTML mentah, tautan, dan gambar dibuang) dan teks panjang diperkecil agar muat.
+- **Urutan tayang**: seret ikon di kiri baris (atau panah atas/bawah pada ikon yang difokuskan) di tab *Semua*; urutan langsung tersimpan.
+- **Unggah**: area seret-lepas (*dropzone*) untuk berkas konten, logo, dan markdown, dengan bilah progres unggah (persen, kecepatan, sisa waktu) dan **persen konversi video** yang dibaca dari ffmpeg.
 - **PDF**: tampil per halaman (pdf.js). Durasi berarti **detik per halaman**. Bila pdf.js gagal dimuat, dokumen tampil lewat penampil bawaan browser selama satu kali durasi.
-- Screensaver berjalan saat tidak ada aktivitas antrian selama waktu *idle* yang diatur. Screensaver memakai item yang ditandai "screensaver" (gambar atau video).
+- Screensaver berjalan saat tidak ada aktivitas antrian **dan** tidak ada gerakan kursor, sentuhan, atau tombol selama waktu *idle* yang diatur; ia **hilang begitu kursor digerakkan** atau layar disentuh. Screensaver memakai item yang ditandai "screensaver" (gambar atau video).
 - Berkas unggahan yang tidak lagi dipakai dihapus otomatis (saat konten dihapus atau diganti, dan penyapuan tiap jam untuk berkas yatim yang berumur lebih dari satu jam).
 - Admin dapat memilih beberapa konten sekaligus untuk diaktifkan, dinonaktifkan, atau dihapus lewat bar aksi massal.
 
 ## Notifikasi pengunjung
 
-Slip kiosk memuat kode QR ke halaman pantau (`/t.html?k=<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
+Slip kiosk memuat kode QR ke halaman pantau (`/antrian/<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.
+
+Saat nomor dipanggil, ponsel pengunjung yang membuka halaman pantau **bergetar berulang** (±tiap 3,5 detik, maksimal 90 detik) sampai pengunjung mengetuk "Saya sudah menuju meja"; panggil ulang memulainya lagi. Batas platform: getar hanya jalan di Chrome/Firefox Android saat halaman terbuka dan peringatan sudah diaktifkan lewat sentuhan; iOS Safari tidak mendukung getar. Untuk ponsel yang terkunci, notifikasi push membawa pola getar panjang (Android saja).
 
 - **Halaman pantau**: nomor, orang di depan, perkiraan tunggu, dan status (menunggu, giliran Anda, dilayani, selesai, dilewati). Diperbarui langsung lewat WebSocket tanpa muat ulang.
 - **Peringatan di halaman** (selalu tersedia): setelah pengunjung mengetuk *Aktifkan peringatan*, ponsel berbunyi dan bergetar saat sisa antrian di depan mencapai batas "hampir giliran" (default 3, bisa diatur) dan saat dipanggil, termasuk saat dipanggil ulang. Judul tab berkedip saat giliran tiba. Peringatan ini hanya bekerja selama halaman masih terbuka, dan ponsel tidak boleh dalam mode senyap.
@@ -198,20 +208,20 @@ server/
   ratelimit.js pembatas laju endpoint publik
   audit.js     log audit JSON ke stdout
   db.js        skema SQLite, migrasi ringan, dan data awal
-public/
-  display.html, kiosk.html, operator.html, admin.html, t.html
-  sw.js        service worker khusus notifikasi push
+web/           sumber antarmuka (Vite membangunnya ke dist/)
+  display.html, kiosk.html, operator.html, admin.html, antrian.html
+  static/sw.js service worker khusus notifikasi push (disalin apa adanya ke dist/)
   css/app.css  sistem desain bersama (token warna di :root)
   js/common.js utilitas API, WebSocket, waktu server, suara
   js/icons.js  ikon SVG
   js/display.js logika papan informasi
   js/kiosk.js, js/operator.js, js/track.js, js/admin.js  logika halaman masing-masing
   js/admin.js  logika dasbor admin
+vite.config.js  konfigurasi build antarmuka
 test/         tes unit, integrasi (npm test), dan e2e (test/e2e)
 deploy/       contoh systemd, proxy, dan skrip layar kiosk
 docs/         panduan penerapan
 scripts/
-  copy-vendor.js  menyalin pdf.js ke public/vendor (dipanggil postinstall)
   backup.js       backup database dan unggahan menjadi satu arsip
   restore.js      pulihkan dari arsip backup
 ```

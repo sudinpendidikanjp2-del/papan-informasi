@@ -1,3 +1,8 @@
+import './icons.js';
+import './common.js';
+import { renderMarkdown } from './markdown.js';
+import { loadYouTubeApi } from './youtube.js';
+
 (function () {
   const P = window.Papan;
   const $ = (id) => document.getElementById(id);
@@ -7,8 +12,9 @@
   let snap = null;
   let unlocked = false;
 
-  // Layar ini diidentifikasi lewat ?screen=<slug>. Tanpa parameter: semua antrian dan konten bersama.
-  const slug = (new URLSearchParams(location.search).get('screen') || '').trim().toLowerCase();
+  // Layar ini diidentifikasi lewat jalur /layar/<slug>. Tanpa slug (jalur /): semua antrian dan konten bersama.
+  const pathSlug = (location.pathname.match(/^\/layar\/([^/]+)\/?$/) || [])[1];
+  const slug = decodeURIComponent(pathSlug || '').trim().toLowerCase();
   let screenCfg = null;
   let screenMissing = false;
   let scopeQs = slug ? '?screen=' + encodeURIComponent(slug) : '';
@@ -77,18 +83,22 @@
     showItem(items[idx]);
   }
 
+  const itemSig = (it) => JSON.stringify([it.type, it.title, it.body, it.url, it.videoId, it.duration]);
+
   function showItem(it) {
     clearTimeout(unitTimer);
     token += 1;
     const my = token;
+    if (cur && cur.player) { try { cur.player.destroy(); } catch { /* sudah hilang */ } }
     const slide = $('slide');
     slide.innerHTML = '';
     $('trackerBox').classList.remove('hidden');
 
     cur = {
       item: it,
+      sig: itemSig(it),
       pdf: it.type === 'pdf',
-      untilEnded: it.type === 'video' && it.duration === 0,
+      untilEnded: (it.type === 'video' || it.type === 'youtube') && it.duration === 0,
       units: 1,
       unit: 0,
       unitMs: it.duration * 1000,
@@ -105,9 +115,14 @@
     if (it.title && it.type !== 'text') slide.appendChild(el('div', 'ttl', P.esc(it.title)));
 
     if (it.type === 'text') {
-      slide.appendChild(el('div', 'slide-text',
-        '<div class="bar"></div><h2>' + P.esc(it.title) + '</h2><p>' + P.esc(it.body) + '</p>'));
+      // Isi pengumuman adalah markdown; renderMarkdown menyanitasi hasilnya (tanpa atribut, tautan, atau gambar).
+      const box = el('div', 'slide-text',
+        '<div class="bar"></div>' + (it.title ? '<h2>' + P.esc(it.title) + '</h2>' : '') + '<div class="md">' + renderMarkdown(it.body) + '</div>');
+      slide.appendChild(box);
+      fitText(box);
       startUnit();
+    } else if (it.type === 'youtube') {
+      showYoutube(it, my);
     } else if (it.type === 'image') {
       const f = el('div', 'fill');
       const img = document.createElement('img');
@@ -126,7 +141,8 @@
       v.playsInline = true;
       v.controls = false;
       v.addEventListener('ended', () => {
-        if (my === token && cur && cur.untilEnded) showNext();
+        if (my !== token || !cur || !cur.untilEnded) return;
+        if (paused) cur.endedWhilePaused = true; else showNext();
       });
       v.addEventListener('error', () => {
         // Video rusak atau hilang: lewati agar papan tidak macet.
@@ -143,12 +159,67 @@
     }
   }
 
+  // Teks panjang diperkecil bertahap sampai muat di panggung (satu kali ukur saat ditampilkan).
+  function fitText(box) {
+    const stage = box.parentElement;
+    let scale = 1;
+    box.style.setProperty('--fit', '1');
+    for (let i = 0; i < 16 && box.offsetHeight > stage.clientHeight && scale > 0.3; i += 1) {
+      scale -= 0.05;
+      box.style.setProperty('--fit', scale.toFixed(2));
+    }
+  }
+
+  // ----- YouTube (IFrame API): berganti saat video selesai; durasi item menjadi batas maksimum -----
+
+  async function showYoutube(it, my) {
+    const f = el('div', 'fill');
+    const host = el('div');
+    f.appendChild(host);
+    $('slide').appendChild(f);
+    cur.loading = true;
+    const skip = (ms) => {
+      clearTimeout(unitTimer);
+      unitTimer = setTimeout(() => my === token && showNext(), ms);
+    };
+    // Pemutar yang tak kunjung siap (internet mati, video diblokir) dilewati agar papan tidak macet.
+    skip(15000);
+    try {
+      const YT = await loadYouTubeApi();
+      if (my !== token) return;
+      cur.player = new YT.Player(host, {
+        host: 'https://www.youtube-nocookie.com',
+        videoId: it.videoId,
+        width: '100%',
+        height: '100%',
+        playerVars: { autoplay: 1, mute: 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3, disablekb: 1, fs: 0, origin: location.origin },
+        events: {
+          onReady: (e) => {
+            if (my !== token) return;
+            e.target.mute();
+            e.target.playVideo();
+            cur.loading = false;
+            startUnit();
+          },
+          onStateChange: (e) => {
+            if (my !== token || e.data !== YT.PlayerState.ENDED) return;
+            if (paused) cur.endedWhilePaused = true; else showNext();
+          },
+          onError: () => skip(1500),
+        },
+      });
+    } catch {
+      if (my === token) skip(5000);
+    }
+  }
+
   function startUnit() {
     if (!cur) return;
     const my = token;
     cur.unitEndsAt = Date.now() + cur.unitMs;
     if (!cur.startedAt) cur.startedAt = Date.now();
     clearTimeout(unitTimer);
+    if (paused) return tickCountdown(); // pengunjung sedang menjelajah: durasi tayang dimatikan sementara
     if (!cur.untilEnded) unitTimer = setTimeout(() => my === token && nextUnit(), cur.unitMs);
     tickCountdown();
   }
@@ -169,8 +240,12 @@
   let pdfjsPromise = null;
   function loadPdfjs() {
     if (!pdfjsPromise) {
-      pdfjsPromise = import('/vendor/pdfjs/pdf.min.mjs').then((m) => {
-        m.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+      // Build legacy pdf.js (kompatibel dengan browser TV lama), dibundel Vite sebagai potongan terpisah.
+      pdfjsPromise = Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.min.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+      ]).then(([m, w]) => {
+        m.GlobalWorkerOptions.workerSrc = w.default;
         return m;
       });
     }
@@ -184,7 +259,7 @@
     try {
       const m = await loadPdfjs();
       if (!pdfDocs.has(it.url)) {
-        pdfDocs.set(it.url, m.getDocument({ url: it.url, standardFontDataUrl: '/vendor/pdfjs/standard_fonts/' }).promise);
+        pdfDocs.set(it.url, m.getDocument({ url: it.url, standardFontDataUrl: '/pdf-fonts/' }).promise);
       }
       const doc = await pdfDocs.get(it.url);
       if (my !== token) return;
@@ -250,7 +325,9 @@
     const now = Date.now();
     let secs = 0;
     let text;
-    if (cur.loading) {
+    if (paused) {
+      text = 'Dijeda';
+    } else if (cur.loading) {
       text = 'Memuat…';
     } else if (cur.untilEnded) {
       text = 'Video';
@@ -267,8 +344,11 @@
     const segs = $('tracker').children;
     if (segs.length !== items.length) buildTracker();
     let ratio = 0;
-    if (!cur.loading && !cur.untilEnded && cur.startedAt && cur.totalMs) {
+    if (paused) {
+      ratio = cur.frozenRatio || 0; // isian bilah berhenti di posisi terakhir selama pengunjung menjelajah
+    } else if (!cur.loading && !cur.untilEnded && cur.startedAt && cur.totalMs) {
       ratio = Math.min(1, (now - cur.startedAt) / cur.totalMs);
+      cur.frozenRatio = ratio;
     }
     for (let i = 0; i < segs.length; i += 1) {
       const s = segs[i];
@@ -284,7 +364,7 @@
         fill.style.width = '';
       }
     }
-    $('trackerCount').textContent = items.length ? (idx + 1) + ' dari ' + items.length : '';
+    $('trackerCount').textContent = items.length ? (idx + 1) + '/' + items.length : '';
   }
 
   function applyPlaylist(newPl) {
@@ -294,10 +374,13 @@
     prepareSaver();
     if (!items.length) return renderEmpty();
     buildTracker();
+    if (infoOnly) renderBrowseList();
     const keep = items.findIndex((x) => x.id === prevId);
     if (keep >= 0) {
-      // Item aktif tidak diganggu; hitung mundur lanjut sampai habis.
+      // Item aktif tidak diganggu selama isinya sama; hitung mundur lanjut sampai habis. Bila admin mengubah
+      // isinya (judul, teks, tautan, durasi), item itu ditampilkan ulang agar perubahan langsung terlihat.
       idx = keep;
+      if (cur && cur.sig !== itemSig(items[idx])) showItem(items[idx]);
     } else {
       idx = -1;
       showNext();
@@ -316,10 +399,12 @@
   }
 
   function isIdle() {
-    if (!snap || !saverItems.length) return false;
+    if (!saverItems.length || (!infoOnly && !snap)) return false;
     const own = screenCfg && screenCfg.idleMinutes;
     const minutes = Math.max(1, parseInt(own || settings.idle_minutes || '3', 10));
-    return P.timeSync.now() - snap.lastActivity > minutes * 60000;
+    // Diam = tanpa aktivitas antrian (bila layar menampilkan antrian) dan tanpa gerakan kursor/sentuhan/tombol.
+    const last = Math.max(infoOnly || !snap ? 0 : snap.lastActivity, lastUserActivity);
+    return P.timeSync.now() - last > minutes * 60000;
   }
 
   function updateSaver() {
@@ -418,14 +503,15 @@
     $('statServing').textContent = snap.serving ?? 0;
 
     const box = $('counters');
-    box.classList.toggle('two', snap.counters.length > 5);
+    box.classList.toggle('two', snap.counters.length > 4);
+    box.classList.toggle('dense', snap.counters.length > 10);
     box.innerHTML = snap.counters.length
       ? snap.counters.map((c) => {
           const cur = c.current;
           const queued = (c.dedicatedWaiting || []).length;
           const status = cur
-            ? '<span class="pill">Melayani</span>'
-            : '<span class="pill ok"><span class="dot"></span>Kosong</span>';
+            ? '<span class="pill busy"><span class="t">Melayani</span></span>'
+            : '<span class="pill ok" title="Kosong"><span class="dot"></span><span class="t">Kosong</span></span>';
           return '<div class="ctr' + (cur ? ' busy' : '') + '">' +
             '<div class="av">' + P.esc(counterBadge(c.name)) + '</div>' +
             '<div class="grow"><div class="nm">' + P.esc(c.name) + '</div>' +
@@ -434,13 +520,7 @@
         }).join('')
       : '<div class="muted">Belum ada meja</div>';
 
-    $('cats').innerHTML = snap.categories.length
-      ? snap.categories.map((k) =>
-          '<div class="cat"><span>' + P.esc(k.name) + ' <span class="muted">(' + P.esc(k.prefix) + ')</span></span>' +
-          '<span class="w">' + k.waiting + '</span></div>').join('')
-      : '<div class="muted">Belum ada kategori</div>';
-
-    $('recent').innerHTML = (snap.recent || []).slice(0, 6).map((r) =>
+    $('recent').innerHTML = (snap.recent || []).slice(0, 4).map((r) =>
       '<span class="rc"><b>' + P.esc(r.label) + '</b> → ' + P.esc(r.counter || '') +
       (r.priority ? ' ' + P.icon('star') : '') + '</span>').join('');
   }
@@ -473,6 +553,25 @@
       }
     }
     applyIdentity();
+    applyMode();
+  }
+
+  // Mode layar: tampil antrian atau hanya papan informasi. Perubahan mode saat berjalan memuat ulang halaman
+  // (suara, overlay, dan langganan antrian bergantung pada mode sejak awal).
+  let modeKnown = false;
+  function applyMode() {
+    const want = !!(screenCfg && screenCfg.showQueue === false);
+    if (!modeKnown) {
+      modeKnown = true;
+      infoOnly = want;
+      document.getElementById('board').classList.toggle('info-only', want);
+      if (want) {
+        unlocked = true; // tanpa suara antrian, tidak perlu menunggu ketukan "Aktifkan"
+        $('unlock').classList.add('hidden');
+      }
+    } else if (want !== infoOnly) {
+      location.reload();
+    }
   }
 
   async function loadSettings() {
@@ -485,6 +584,7 @@
   }
 
   async function loadState() {
+    if (infoOnly) return; // layar papan-informasi-saja tidak memuat antrian
     try {
       snap = await P.api('/api/state' + scopeQs);
       renderQueue();
@@ -504,10 +604,107 @@
     }
   }
 
+  // ---------- Aktivitas pengunjung: screensaver, kursor, dan menjelajah (layar tanpa antrian) ----------
+
+  let infoOnly = false;
+  let paused = false;        // pengunjung sedang menjelajah: durasi tayang dibekukan
+  let resumeTimer = null;
+  let cursorTimer = null;
+  let lastX = null;
+  let lastY = null;
+  let lastUserActivity = P.timeSync.now();
+  const resumeMs = () => ((screenCfg && screenCfg.resumeSeconds) || 20) * 1000;
+  const MOVE_THRESHOLD = 8; // piksel; getaran kecil sensor/mouse tidak dihitung
+
+  function showCursor() {
+    document.body.classList.remove('nocursor');
+    clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(() => document.body.classList.add('nocursor'), 3000);
+  }
+
+  function onUserActivity(kind, e) {
+    if (kind === 'move') {
+      if (lastX === null) { lastX = e.clientX; lastY = e.clientY; return; }
+      if (Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY) < MOVE_THRESHOLD) return;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+    lastUserActivity = P.timeSync.now();
+    showCursor();
+    if (saverOn) stopSaver(); // screensaver hilang begitu kursor bergerak atau layar disentuh
+    if (infoOnly) enterBrowse();
+  }
+  document.addEventListener('pointermove', (e) => onUserActivity('move', e), { passive: true });
+  for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(t, (e) => onUserActivity(t, e), { passive: true });
+  showCursor();
+
+  const TYPE_ICON = { text: 'list', image: 'image', video: 'play', pdf: 'file', youtube: 'youtube' };
+  const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'Dokumen PDF', youtube: 'Video YouTube' };
+
+  function renderBrowseList() {
+    const box = $('browseList');
+    box.innerHTML = items.map((it, i) =>
+      '<button type="button" class="bi' + (i === idx ? ' on' : '') + '" data-i="' + i + '"' + (i === idx ? ' aria-current="true"' : '') + '>' +
+      '<span class="bic">' + P.icon(TYPE_ICON[it.type] || 'list') + '</span>' +
+      '<span class="bt"><span class="n">' + P.esc(it.title || TYPE_LABEL[it.type] || 'Informasi') + '</span>' +
+      '<span class="m">' + (TYPE_LABEL[it.type] || '') + '</span></span></button>').join('');
+    $('browsePdf').classList.toggle('hidden', !(cur && cur.pdf && cur.doc && cur.units > 1));
+    const on = box.querySelector('.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+
+  function enterBrowse() {
+    if (!items.length) return;
+    if (!paused) {
+      paused = true;
+      clearTimeout(unitTimer); // matikan durasi penayangan selama pengunjung melihat-lihat
+      tickCountdown();
+    }
+    // Daftar hanya digambar ulang saat dibuka: menggambar ulang tiap gerakan menghapus tombol yang sedang diklik.
+    if (!$('browse').classList.contains('open')) renderBrowseList();
+    $('browse').classList.add('open');
+    clearTimeout(resumeTimer);
+    resumeTimer = setTimeout(leaveBrowse, resumeMs());
+  }
+
+  // Tidak ada gerakan selama resumeSeconds: sembunyikan daftar dan lanjutkan dengan durasi penayangan penuh.
+  function leaveBrowse() {
+    paused = false;
+    clearTimeout(resumeTimer);
+    $('browse').classList.remove('open');
+    if (!cur || cur.endedWhilePaused) return showNext();
+    cur.startedAt = 0;
+    cur.frozenRatio = 0;
+    startUnit();
+  }
+
+  function jumpTo(i) {
+    if (!items[i]) return;
+    idx = i;
+    showItem(items[i]); // startUnit menahan timer selama paused
+    renderBrowseList();
+  }
+
+  function pdfStep(d) {
+    if (!cur || !cur.pdf || !cur.doc) return;
+    const u = Math.max(0, Math.min(cur.units - 1, cur.unit + d));
+    if (u === cur.unit) return;
+    cur.unit = u;
+    renderPdfPage(cur, token);
+    tickCountdown();
+  }
+
+  $('browse').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-i]');
+    if (b) return jumpTo(Number(b.dataset.i));
+    const p = e.target.closest('[data-pdf]');
+    if (p) pdfStep(Number(p.dataset.pdf));
+  });
+
   // ---------- Pemanggilan (suara) ----------
 
   function announce(c) {
-    if (!unlocked) return;
+    if (!unlocked || infoOnly) return;
     // Layar dengan filter kategori hanya mengumumkan panggilan untuk kategorinya.
     if (screenCfg && screenCfg.categoryIds.length && !screenCfg.categoryIds.includes(c.categoryId)) return;
     if (settings.sound_enabled !== '0') P.chime();

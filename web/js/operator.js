@@ -1,3 +1,6 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const I = window.Icons;
@@ -14,7 +17,6 @@
   $('logout').innerHTML = P.icon('logout') + 'Keluar';
   $('next').innerHTML = P.icon('bell') + 'Panggil berikutnya';
   $('recall').innerHTML = P.icon('bell') + 'Panggil ulang';
-  $('start').innerHTML = P.icon('play') + 'Mulai layani';
   $('done').innerHTML = P.icon('check') + 'Selesai';
   $('skip').innerHTML = P.icon('x') + 'Lewati';
   $('xferBtn').innerHTML = P.icon('swap') + 'Pindahkan';
@@ -148,17 +150,16 @@
     big.textContent = cur ? cur.label : '—';
     big.classList.toggle('idle', !cur);
     $('curSub').textContent = cur
-      ? (cur.status === 'serving' ? 'Sedang dilayani' : 'Dipanggil, menunggu pengunjung ke meja')
+      ? 'Sedang dilayani (sudah dipanggil)'
       : 'Belum ada antrian yang dilayani';
     const pill = $('curPill');
     pill.className = 'hero-pill' + (cur && cur.priority ? ' y' : '');
     pill.innerHTML = cur
-      ? (cur.priority ? P.icon('star') + 'Prioritas' : P.icon('clock') + (cur.status === 'serving' ? 'Dilayani' : 'Dipanggil'))
+      ? (cur.priority ? P.icon('star') + 'Prioritas' : P.icon('clock') + 'Dilayani')
       : P.icon('clock') + 'Siap';
 
     $('next').disabled = !!cur;
     $('recall').disabled = !cur;
-    $('start').disabled = !cur || cur.status !== 'called';
     $('done').disabled = !cur;
     $('skip').disabled = !cur;
 
@@ -208,7 +209,7 @@
       return null;
     }
   }
-  for (const a of ['next', 'recall', 'start', 'done', 'skip']) $(a).addEventListener('click', () => act(a));
+  for (const a of ['next', 'recall', 'done', 'skip']) $(a).addEventListener('click', () => act(a));
 
   $('xferBtn').addEventListener('click', async () => {
     const r = await act('transfer', { toCounterId: Number($('xferTo').value) });
@@ -274,7 +275,7 @@
 
   // ----- Riwayat -----
   // Status riwayat: [kelas pil, label]
-  const STATUS = { done: ['ok', 'Selesai'], skipped: ['warn', 'Dilewati'], called: ['', 'Dipanggil'], serving: ['', 'Dilayani'], waiting: ['off', 'Menunggu'] };
+  const STATUS = { done: ['ok', 'Selesai'], skipped: ['warn', 'Dilewati'], serving: ['', 'Dilayani'], waiting: ['off', 'Menunggu'] };
   async function loadHistory() {
     try {
       const rows = await P.api('/api/auth/history');

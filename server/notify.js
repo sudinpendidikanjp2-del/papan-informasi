@@ -60,7 +60,7 @@ export function subscribe(token, sub) {
   if (!enabled()) throw new HttpError(403, 'Notifikasi push dimatikan oleh admin');
   const t = db.prepare('SELECT id, status, day FROM tickets WHERE token = ?').get(String(token || ''));
   if (!t) throw new HttpError(404, 'Tiket tidak ditemukan');
-  if (t.day !== today() || !['waiting', 'called', 'serving'].includes(t.status)) {
+  if (t.day !== today() || !['waiting', 'serving'].includes(t.status)) {
     throw new HttpError(409, 'Tiket ini sudah selesai');
   }
 
@@ -123,7 +123,7 @@ export async function onCall(c) {
         title: 'Giliran Anda tiba',
         body: 'Nomor ' + c.label + ', silakan menuju ' + (c.counter || 'meja layanan') + '.',
         tag: 'ticket-' + c.ticketId,
-        url: '/t.html?k=' + r.token,
+        url: '/antrian/' + r.token,
       })
     )
   );
@@ -142,7 +142,7 @@ export async function onTransfer(c) {
         title: 'Nomor antrian Anda dipindahkan',
         body: 'Nomor baru Anda ' + c.label + ' (' + c.categoryName + '), sebelumnya ' + c.prevLabel + '. Waktu tunggu awal tetap dihitung.',
         tag: 'ticket-' + c.ticketId,
-        url: '/t.html?k=' + r.token,
+        url: '/antrian/' + r.token,
       })
     )
   );
@@ -174,7 +174,7 @@ export async function checkNear() {
         title: 'Giliran Anda hampir tiba',
         body: 'Nomor ' + label + ': ' + (ahead === 0 ? 'Anda berikutnya' : ahead + ' antrian lagi') + '. Mohon bersiap menuju loket.',
         tag: 'ticket-' + r.tid,
-        url: '/t.html?k=' + r.token,
+        url: '/antrian/' + r.token,
       });
     }
   }
@@ -188,7 +188,7 @@ export async function checkNear() {
 // Alamat dasar untuk tautan QR: pengaturan admin, atau alamat yang dipakai pengunjung saat ini.
 export function trackUrl(token, fallbackBase) {
   const base = (getSettings().public_base_url || fallbackBase || '').replace(/\/+$/, '');
-  return base + '/t.html?k=' + token;
+  return base + '/antrian/' + token;
 }
 
 export function qrSvg(text) {

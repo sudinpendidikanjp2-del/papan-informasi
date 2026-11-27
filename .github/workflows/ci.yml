@@ -42,8 +42,8 @@ jobs:
       - run: npm ci
       - name: Unit dan integrasi
         run: npm test
-      - name: Audit dependensi produksi
-        run: npm audit --omit=dev --audit-level=high
+      - name: Audit dependensi (server dan pustaka frontend yang dibundel)
+        run: npm audit --audit-level=high
 
   e2e:
     name: E2E (Playwright)

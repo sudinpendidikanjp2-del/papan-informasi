@@ -26,9 +26,9 @@ describe('penomoran dan urutan panggilan', () => {
   it('meja yang sedang melayani tidak bisa memanggil lagi (409)', () => {
     assert.equal(code(() => svc.callNext(1, null)), 409);
   });
-  it('status berjalan: dipanggil, mulai layani, selesai', () => {
-    assert.equal(svc.startServing(1).status, 'serving');
-    assert.equal(code(() => svc.startServing(1)), 409); // sudah serving
+  it('status berjalan: dipanggil = melayani, lalu selesai (tanpa langkah mulai terpisah)', () => {
+    assert.equal(db.prepare("SELECT status FROM tickets WHERE served_by = 1 AND status IN ('called','serving')").get().status, 'serving');
+    assert.equal(svc.startServing, undefined);
     assert.equal(svc.finish(1).status, 'done');
     assert.equal(code(() => svc.finish(1)), 404); // tidak ada yang dipegang
   });
@@ -74,7 +74,7 @@ describe('perkiraan tunggu', () => {
     assert.equal(svc.ticketStatus(t2.token).ahead, 2);
     // selesaikan satu layanan agar ada rata-rata durasi
     svc.callNext(3, null);
-    db.prepare("UPDATE tickets SET called_at = ?, done_at = ? WHERE status = 'called' AND category_id = 2").run(Date.now() - 10 * 60000, Date.now());
+    db.prepare("UPDATE tickets SET called_at = ?, done_at = ? WHERE status = 'serving' AND category_id = 2").run(Date.now() - 10 * 60000, Date.now());
     svc.finish(3);
     const st = svc.ticketStatus(t2.token);
     assert.equal(st.ahead, 1);

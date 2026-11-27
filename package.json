@@ -1,26 +1,40 @@
 {
   "name": "papan-informasi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Papan informasi digital dan sistem nomor antrian",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
+    "build": "vite build",
+    "dev": "vite",
     "start": "node server/index.js",
-    "postinstall": "node scripts/copy-vendor.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
     "test:slow": "SLOW_TESTS=1 node --disable-warning=ExperimentalWarning --test test/*.test.js",
-    "test:e2e": "node --disable-warning=ExperimentalWarning test/e2e/run.mjs"
+    "test:e2e": "node --disable-warning=ExperimentalWarning test/e2e/run.mjs",
+    "pretest": "npm run build",
+    "pretest:slow": "npm run build",
+    "pretest:e2e": "npm run build"
   },
   "engines": {
     "node": ">=22.13"
   },
   "dependencies": {
-    "pdfjs-dist": "4.10.38",
     "qrcode-generator": "1.4.4",
     "web-push": "3.6.7",
     "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@tiptap/core": "3.35.0",
+    "@tiptap/markdown": "3.35.0",
+    "@tiptap/pm": "3.35.0",
+    "@tiptap/starter-kit": "3.35.0",
+    "dompurify": "3.5.0",
+    "marked": "18.3.0",
+    "pdfjs-dist": "4.10.38",
+    "sortablejs": "1.15.7",
+    "vite": "8.3.8"
   }
 }

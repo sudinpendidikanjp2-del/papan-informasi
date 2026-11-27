@@ -7,7 +7,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-export const db = new DatabaseSync(path.join(DATA_DIR, 'papan.db'));
+// Direktori data yang tidak bisa ditulis (bind mount milik root, volume platform) paling sering di Docker.
+// Beri pesan yang bisa ditindaklanjuti alih-alih tumpukan galat SQLite.
+function failData(reason) {
+  let owner = '?';
+  try { const st = fs.statSync(DATA_DIR); owner = `uid ${st.uid} gid ${st.gid} mode ${(st.mode & 0o777).toString(8)}`; } catch { /* abaikan */ }
+  const me = typeof process.getuid === 'function' ? `uid ${process.getuid()} gid ${process.getgid()}` : 'uid tidak diketahui';
+  console.error(`Tidak dapat memakai direktori data ${DATA_DIR}: ${reason}.\n`
+    + `  Proses berjalan sebagai ${me}; direktori dimiliki ${owner}.\n`
+    + '  Perbaiki: beri pemilik direktori itu ke pengguna yang menjalankan server '
+    + '(mis. "chown -R 1000:1000 <folder>" pada host), atau jalankan container sebagai root agar entrypoint '
+    + 'memperbaikinya otomatis (jangan pakai --user bila tidak perlu).');
+  process.exit(1);
+}
+const DB_FILE = path.join(DATA_DIR, 'papan.db');
+try { fs.accessSync(DATA_DIR, fs.constants.W_OK); } catch { failData('tidak dapat ditulis'); }
+if (fs.existsSync(DB_FILE)) { try { fs.accessSync(DB_FILE, fs.constants.R_OK | fs.constants.W_OK); } catch { failData('papan.db tidak dapat dibaca/ditulis'); } }
+export const db = new DatabaseSync(DB_FILE);
 
 db.exec(`
 PRAGMA busy_timeout = 5000;
@@ -21,10 +37,11 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS contents (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf')),
+  type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf','youtube')),
   title       TEXT    NOT NULL DEFAULT '',
   body        TEXT    NOT NULL DEFAULT '',
   file        TEXT    NOT NULL DEFAULT '',
+  url         TEXT    NOT NULL DEFAULT '',
   duration    INTEGER NOT NULL DEFAULT 15,
   sort        INTEGER NOT NULL DEFAULT 0,
   active      INTEGER NOT NULL DEFAULT 1,
@@ -133,6 +150,51 @@ CREATE TABLE IF NOT EXISTS sessions (
 `);
 
 // Migrasi dari iterasi 1: catat pegawai yang melayani tiap antrian.
+// Basis data lama: tabel contents belum mengenal tipe 'youtube' dan kolom url. SQLite tidak bisa mengubah CHECK,
+// jadi tabel dibangun ulang (data utuh) di dalam transaksi dengan foreign_keys dimatikan sementara.
+{
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents'").get().sql;
+  if (!sql.includes("'youtube'")) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec(`CREATE TABLE contents_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL CHECK (type IN ('text','image','video','pdf','youtube')),
+        title       TEXT    NOT NULL DEFAULT '',
+        body        TEXT    NOT NULL DEFAULT '',
+        file        TEXT    NOT NULL DEFAULT '',
+        url         TEXT    NOT NULL DEFAULT '',
+        duration    INTEGER NOT NULL DEFAULT 15,
+        sort        INTEGER NOT NULL DEFAULT 0,
+        active      INTEGER NOT NULL DEFAULT 1,
+        screensaver INTEGER NOT NULL DEFAULT 0
+      )`);
+      db.exec(`INSERT INTO contents_new (id, type, title, body, file, duration, sort, active, screensaver)
+               SELECT id, type, title, body, file, duration, sort, active, screensaver FROM contents`);
+      db.exec('DROP TABLE contents');
+      db.exec('ALTER TABLE contents_new RENAME TO contents');
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+
+// Panggil = melayani: status 'called' (alur dua langkah lama) digabung ke 'serving'. Aman diulang.
+db.exec("UPDATE tickets SET status = 'serving' WHERE status = 'called'");
+
+// Mode layar: show_queue = 0 berarti layar hanya papan informasi (tanpa antrian) yang interaktif;
+// resume_seconds = jeda tanpa gerakan sebelum tayangan dilanjutkan (kosong = bawaan 20 detik).
+{
+  const screenCols = db.prepare('PRAGMA table_info(screens)').all().map((c) => c.name);
+  if (!screenCols.includes('show_queue')) db.exec('ALTER TABLE screens ADD COLUMN show_queue INTEGER NOT NULL DEFAULT 1');
+  if (!screenCols.includes('resume_seconds')) db.exec('ALTER TABLE screens ADD COLUMN resume_seconds INTEGER');
+}
+
 const ticketCols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
 if (!ticketCols.includes('served_user_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN served_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');

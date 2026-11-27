@@ -16,7 +16,12 @@ import { checkUpload } from './upload-check.js';
 import { audit } from './audit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// Antarmuka hasil build Vite (npm run build). Sumbernya ada di web/.
+const PUBLIC_DIR = path.join(__dirname, '..', 'dist');
+if (!fs.existsSync(path.join(PUBLIC_DIR, 'display.html'))) {
+  console.error('Antarmuka belum dibangun (folder dist/ tidak ada). Jalankan "npm run build" lebih dulu.');
+  process.exit(1);
+}
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -150,7 +155,7 @@ async function api(req, res, url) {
 
   checkOrigin(req);
 
-  // Publik. Parameter ?screen=<slug> memfilter konten dan antrian sesuai pengaturan layar.
+  // Publik. Parameter ?screen=<slug> (dikirim klien dari jalur /layar/<slug>) memfilter konten dan antrian sesuai pengaturan layar.
   const screenSlug = url.searchParams.get('screen');
   if (m === 'GET' && p === '/api/time') return send(res, 200, { now: Date.now() });
   if (m === 'GET' && p === '/api/settings') return send(res, 200, getSettings());
@@ -211,7 +216,7 @@ async function api(req, res, url) {
   if (m === 'GET' && p === '/api/auth/history') return send(res, 200, svc.historyFor(requireSession(req).userId));
 
   // Meja: pegawai hanya di mejanya sendiri, admin di meja mana pun.
-  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|start|done|skip|ticket|transfer)$/);
+  const counterAction = p.match(/^\/api\/counter\/(\d+)\/(next|recall|done|skip|ticket|transfer)$/);
   if (m === 'POST' && counterAction) {
     const session = requireSession(req);
     const id = Number(counterAction[1]);
@@ -222,7 +227,6 @@ async function api(req, res, url) {
     const actions = {
       next: () => svc.callNext(id, session.userId),
       recall: () => svc.recall(id),
-      start: () => svc.startServing(id),
       done: () => svc.finish(id),
       skip: () => svc.skip(id),
     };
@@ -247,7 +251,7 @@ async function adminApi(req, res, url, session) {
   };
 
   if (m === 'GET' && p === '/api/admin/summary') {
-    return send(res, 200, { ...svc.summary(), ffmpeg: media.ffmpegAvailable });
+    return send(res, 200, { ...svc.summary(), ffmpeg: media.ffmpegAvailable, youtube: YOUTUBE_ENABLED });
   }
 
   if (m === 'GET' && p === '/api/admin/content') return send(res, 200, svc.listContents());
@@ -272,6 +276,7 @@ async function adminApi(req, res, url, session) {
     return send(res, 200, r);
   }
   // Operasi massal dari bar aksi: { ids: [..], action: 'activate' | 'deactivate' | 'delete' }
+  if (m === 'POST' && p === '/api/admin/content/reorder') return send(res, 200, svc.reorderContents((await readJson(req)).ids));
   if (m === 'POST' && p === '/api/admin/content/bulk') return send(res, 200, bulkContent(await readJson(req)));
 
   if (m === 'POST' && p === '/api/admin/upload') {
@@ -439,7 +444,9 @@ function serveFile(req, res, filePath, root) {
     }
     const type = MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
     // Referrer dimatikan: URL halaman pantau memuat token tiket dan tidak boleh bocor ke pihak lain.
-    const headers = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'no-cache', 'referrer-policy': 'no-referrer' };
+    // Aset ber-hash dari build (/assets/*) tidak pernah berubah isinya; halaman dan lainnya selalu divalidasi ulang.
+    const immutable = resolved.startsWith(path.join(path.resolve(root), 'assets') + path.sep);
+    const headers = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache', 'referrer-policy': 'no-referrer' };
     // Dukungan Range agar video bisa diputar dan dicari posisinya di browser.
     const range = req.headers.range;
     if (range) {
@@ -478,15 +485,18 @@ function health(res) {
 
 // Kebijakan konten: skrip hanya dari asal sendiri (tanpa skrip inline), gaya inline diizinkan karena
 // atribut style dinamis dipakai di banyak tempat. Worker blob diperlukan sebagai cadangan pdf.js.
+// Konten YouTube butuh IFrame API (skrip dari youtube.com) dan pemutar di iframe. Hanya host YouTube yang dilonggarkan;
+// YOUTUBE=off mematikan jenis konten itu dan mengembalikan CSP ke 'self' saja.
+const YOUTUBE_ENABLED = String(process.env.YOUTUBE || 'on').toLowerCase() !== 'off';
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  YOUTUBE_ENABLED ? "script-src 'self' https://www.youtube.com" : "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  YOUTUBE_ENABLED ? "img-src 'self' data: blob: https://i.ytimg.com" : "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "connect-src 'self' ws: wss:",
   "worker-src 'self' blob:",
-  "frame-src 'self'",
+  YOUTUBE_ENABLED ? "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com" : "frame-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -512,6 +522,44 @@ function setSecurityHeaders(req, res, pathname) {
   }
 }
 
+// Jalur halaman tanpa ekstensi. Alamat lama (*.html, /?screen=) dialihkan 301 agar kiosk, QR, dan bookmark lama tetap jalan.
+const PAGES = { '/': 'display.html', '/kiosk': 'kiosk.html', '/operator': 'operator.html', '/admin': 'admin.html' };
+const LEGACY = { '/display.html': '/', '/kiosk.html': '/kiosk', '/operator.html': '/operator', '/admin.html': '/admin' };
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+
+function withQuery(pathname, params) {
+  const q = params.toString();
+  return q ? pathname + '?' + q : pathname;
+}
+
+function resolvePage(url) {
+  let p = url.pathname;
+  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+  const params = new URLSearchParams(url.search);
+  if (p === '/' || p === '/display.html') {
+    const slug = (params.get('screen') || '').trim().toLowerCase();
+    if (slug) {
+      params.delete('screen');
+      return SLUG_RE.test(slug) ? { redirect: withQuery('/layar/' + slug, params) } : { redirect: withQuery('/', params) };
+    }
+    if (p === '/display.html') return { redirect: withQuery('/', params) };
+    return { file: PAGES['/'] };
+  }
+  if (LEGACY[p]) return { redirect: withQuery(LEGACY[p], params) };
+  if (p === '/t.html') {
+    const k = (params.get('k') || '').trim();
+    params.delete('k');
+    return { redirect: k && k.length <= 100 ? withQuery('/antrian/' + encodeURIComponent(k.toLowerCase()), params) : '/' };
+  }
+  if (PAGES[p]) return { file: PAGES[p] };
+  let m = p.match(/^\/layar\/([^/]+)$/);
+  if (m && SLUG_RE.test(m[1].toLowerCase())) return { file: PAGES['/'] };
+  m = p.match(/^\/antrian\/([^/]+)$/);
+  // Token tak dikenal tetap menampilkan halaman; halaman sendiri yang menjelaskan "tidak ditemukan".
+  if (m && m[1].length <= 100) return { file: 'antrian.html' };
+  return {};
+}
+
 async function handler(req, res) {
   // Permintaan dengan target rusak tidak boleh menjatuhkan proses (handler async yang melempar
   // di luar try menjadi unhandled rejection).
@@ -529,17 +577,21 @@ async function handler(req, res) {
     if (url.pathname.startsWith('/uploads/')) {
       return serveFile(req, res, path.join(UPLOAD_DIR, path.basename(url.pathname)), UPLOAD_DIR);
     }
-    let rel = '';
-    if (url.pathname === '/') {
-      rel = 'display.html';
-    } else {
-      try {
-        rel = decodeURIComponent(url.pathname.slice(1));
-      } catch {
-        throw new HttpError(400, 'Alamat tidak valid');
-      }
+    const route = resolvePage(url);
+    if (route.redirect) {
+      res.writeHead(301, { location: route.redirect, 'cache-control': 'no-cache' }).end();
+      return;
+    }
+    if (route.file) return serveFile(req, res, path.join(PUBLIC_DIR, route.file), PUBLIC_DIR);
+    let rel;
+    try {
+      rel = decodeURIComponent(url.pathname.slice(1));
+    } catch {
+      throw new HttpError(400, 'Alamat tidak valid');
     }
     if (rel.includes('\0')) throw new HttpError(400, 'Alamat tidak valid');
+    // Halaman hanya boleh dibuka lewat jalur bersih; berkas .html mentah tidak disajikan.
+    if (rel.toLowerCase().endsWith('.html')) throw new HttpError(404, 'Tidak ditemukan');
     return serveFile(req, res, path.join(PUBLIC_DIR, rel), PUBLIC_DIR);
   } catch (err) {
     const code = err instanceof HttpError ? err.code : 500;
@@ -680,5 +732,5 @@ process.on('exit', removePid);
 const HOST = process.env.HOST || '';
 server.listen(PORT, HOST || undefined, () => {
   fs.writeFileSync(PID_FILE, String(process.pid));
-  console.log(`[papan] berjalan di ${SCHEME}://${HOST || 'localhost'}:${PORT}  (display: /, kiosk: /kiosk.html, meja: /operator.html, admin: /admin.html)`);
+  console.log(`[papan] berjalan di ${SCHEME}://${HOST || 'localhost'}:${PORT}  (papan: /, layar: /layar/<slug>, kiosk: /kiosk, meja: /operator, admin: /admin)`);
 });

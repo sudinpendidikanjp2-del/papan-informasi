@@ -1,7 +1,10 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const $ = (id) => document.getElementById(id);
-  const token = (new URLSearchParams(location.search).get('k') || '').toLowerCase();
+  const token = decodeURIComponent((location.pathname.match(/^\/antrian\/([^/]+)\/?$/) || [])[1] || '').toLowerCase();
   const valid = /^[a-f0-9]{24}$/.test(token);
 
   let st = null;          // status tiket terakhir
@@ -44,7 +47,7 @@
     $('ticket').classList.remove('hidden');
 
     const hero = $('hero');
-    hero.className = 'hero' + (s.status === 'called' ? ' called' : '') + (s.status === 'done' || s.status === 'skipped' ? ' finished' : '');
+    hero.className = 'hero' + (s.status === 'serving' ? ' called' : '') + (s.status === 'done' || s.status === 'skipped' ? ' finished' : '');
     $('label').textContent = s.label;
     $('cat').textContent = s.categoryName;
 
@@ -74,10 +77,11 @@
         callBox.textContent = 'Akan dipanggil oleh ' + s.dedicatedTo;
         callBox.classList.remove('hidden');
       }
-    } else if (s.status === 'called' || s.status === 'serving') {
+    } else if (s.status === 'serving') {
+      // Dipanggil berarti sudah dilayani: tidak ada keadaan "dipanggil" terpisah.
       pill.className = 'hero-pill y';
-      pill.innerHTML = P.icon('bell') + (s.status === 'called' ? 'Giliran Anda' : 'Sedang dilayani');
-      callBox.textContent = s.status === 'called' ? 'Silakan menuju ' + (s.counter || 'meja layanan') : 'Sedang dilayani di ' + (s.counter || 'meja layanan');
+      pill.innerHTML = P.icon('bell') + 'Giliran Anda';
+      callBox.textContent = 'Silakan menuju ' + (s.counter || 'meja layanan');
       callBox.classList.remove('hidden');
     } else {
       pill.className = 'hero-pill';
@@ -114,10 +118,33 @@
   }
 
   // ---------- Peringatan ----------
+  // Getar berulang selama pengunjung belum menandai "sudah menuju meja" (maks. 90 detik). Hanya jalan di browser
+  // yang mendukung Vibration API (Chrome/Firefox Android) dan saat halaman terbuka; iOS Safari tidak mendukungnya.
+  const VIB_PATTERN = [400, 150, 400, 150, 800];
+  const VIB_EVERY_MS = 3500;
+  const VIB_MAX_MS = 90000;
+  let vibTimer = null;
+  function buzz() { try { navigator.vibrate && navigator.vibrate(VIB_PATTERN); } catch { /* tidak didukung */ } }
+  function stopVibrate() {
+    clearInterval(vibTimer);
+    vibTimer = null;
+    try { navigator.vibrate && navigator.vibrate(0); } catch { /* tidak didukung */ }
+    $('ack').classList.add('hidden');
+  }
+  function startVibrate() {
+    stopVibrate();
+    if (!alertsOn || !navigator.vibrate) return;
+    const until = Date.now() + VIB_MAX_MS;
+    buzz();
+    vibTimer = setInterval(() => { if (Date.now() > until) stopVibrate(); else buzz(); }, VIB_EVERY_MS);
+    $('ack').classList.remove('hidden');
+  }
+  $('ack').addEventListener('click', () => { stopVibrate(); clearInterval(flashTimer); document.title = baseTitle; });
+
   function alertCalled() {
     if (alertsOn) {
       P.chime();
-      try { navigator.vibrate && navigator.vibrate([300, 150, 300, 150, 600]); } catch { /* tidak didukung */ }
+      startVibrate();
     }
     clearInterval(flashTimer);
     let on = false;
@@ -189,10 +216,10 @@
       st = s;
       render();
       if (prev && prev.label !== st.label && st.prevLabel) alertNear(); // nomor berganti (dipindah kategori)
-      else if (prev && prev.status === 'waiting' && (st.status === 'called' || st.status === 'serving')) alertCalled();
-      else if (prev && prev.status === 'called' && st.status === 'called' && st.calledAt !== prev.calledAt) alertCalled(); // dipanggil ulang
+      else if (prev && prev.status === 'waiting' && st.status === 'serving') alertCalled();
+      else if (prev && prev.status === 'serving' && st.status === 'serving' && st.calledAt !== prev.calledAt) alertCalled(); // dipanggil ulang
       else if (prev && prev.status === 'waiting' && st.status === 'waiting' && prev.ahead > st.nearAt && st.ahead <= st.nearAt) alertNear();
-      if (st.status === 'done' || st.status === 'skipped') { clearInterval(flashTimer); document.title = baseTitle; }
+      if (st.status === 'done' || st.status === 'skipped') { clearInterval(flashTimer); document.title = baseTitle; stopVibrate(); }
     } catch (e) {
       if (e.status === 404) missing('Tiket tidak ditemukan', 'Pindai ulang kode QR pada slip antrian Anda.');
       else $('live').classList.add('off');

@@ -27,7 +27,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   const login = async (user, pass, counter, vp = { width: 390, height: 844 }) => {
     const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2 });
     const p = await ctx.newPage(); watch(p, user);
-    await p.goto(B + '/operator.html');
+    await p.goto(B + '/operator');
     await p.fill('#u', user); await p.fill('#p', pass); await p.click('#loginForm button');
     await p.waitForSelector('#pickView:visible');
     await p.locator('#pickList button', { hasText: counter }).click();
@@ -41,7 +41,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
     window.__vib = []; navigator.vibrate = (p) => { window.__vib.push(JSON.stringify(p)); return true; };
   });
   const ph = await pctx.newPage(); watch(ph, 'ponsel');
-  await ph.goto(`${B}/t.html?k=${tA[0].token}`); await ph.waitForSelector('#ticket:visible');
+  await ph.goto(`${B}/antrian/${tA[0].token}`); await ph.waitForSelector('#ticket:visible');
   await ph.click('#enable');
   await ph.waitForFunction(() => document.getElementById('alertStates').textContent.includes('Aktif. Berbunyi'));
   ok((await txt(ph, '#label')) === 'A-001' && await ph.isHidden('#movedBanner'), 'ponsel: A-001 tanpa banner pindah');
@@ -81,7 +81,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   ok(true, 'operator Sari: memanggil B-002 (pindahan, datang lebih awal) lebih dulu');
   await ph.waitForFunction(() => document.getElementById('hero').classList.contains('called'));
   ok((await txt(ph, '#callBox')).includes('Meja 3') && await ph.isHidden('#movedBanner'), 'ponsel: "Silakan menuju Meja 3", banner pindah hilang');
-  await sari.click('#start'); await sari.click('#done');
+  await sari.click('#done');
 
   // Kembalikan ke antrian kategori sendiri (kategori sama): nomor tetap
   await budi.click('#next');

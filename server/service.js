@@ -55,7 +55,7 @@ function currentFor(counterId) {
     .prepare(
       `SELECT t.id, t.number, t.status, t.called_at, t.category_id, t.priority, cat.prefix
          FROM tickets t JOIN categories cat ON cat.id = t.category_id
-        WHERE t.served_by = ? AND t.status IN ('called','serving')
+        WHERE t.served_by = ? AND t.status = 'serving'
         ORDER BY t.called_at DESC LIMIT 1`
     )
     .get(counterId);
@@ -187,7 +187,7 @@ export function ticketStatus(token) {
     priority: !!t.priority,
     ahead,
     etaMinutes,
-    counter: t.status === 'called' || t.status === 'serving' ? t.counter_name : null,
+    counter: t.status === 'serving' ? t.counter_name : null,
     dedicatedTo: t.status === 'waiting' ? t.dedicated_name : null,
     prevLabel: t.status === 'waiting' ? t.prev_label : null,
     calledAt: t.called_at,
@@ -300,6 +300,7 @@ export function dedicatedWaiting(counterId) {
 }
 
 // ---------- Antrian: meja / petugas ----------
+// Status tiket: waiting -> serving (saat dipanggil) -> done | skipped. Status lama 'called' dimigrasi ke 'serving'.
 
 export function callNext(counterId, userId = null) {
   const c = counterById(counterId);
@@ -320,7 +321,7 @@ export function callNext(counterId, userId = null) {
 
   const now = Date.now();
   db.prepare(
-    "UPDATE tickets SET status = 'called', served_by = ?, served_user_id = ?, called_at = ? WHERE id = ?"
+    "UPDATE tickets SET status = 'serving', served_by = ?, served_user_id = ?, called_at = ? WHERE id = ?"
   ).run(c.id, userId, now, t.id);
   touch(t.category_id);
   const payload = {
@@ -358,13 +359,20 @@ function setStatus(counterId, from, to, extra = '') {
   return { label: cur.label, status: to };
 }
 
-export const startServing = (counterId) => setStatus(counterId, 'called', 'serving');
+// Memanggil nomor berarti langsung melayani: tidak ada langkah "mulai layani" terpisah.
 export const finish = (counterId) => setStatus(counterId, null, 'done', ', done_at = ?');
 export const skip = (counterId) => setStatus(counterId, null, 'skipped');
 
 // ---------- Snapshot untuk layar ----------
 
 // ---------- Layar ----------
+
+export const DEFAULT_RESUME_SECONDS = 20;
+
+// Mode layar: tampil antrian atau hanya papan informasi, dan jeda sebelum tayangan lanjut setelah pengunjung diam.
+function screenMode(s) {
+  return { showQueue: s.show_queue !== 0, resumeSeconds: s.resume_seconds || DEFAULT_RESUME_SECONDS };
+}
 
 function screenRow(slug) {
   const s = db.prepare('SELECT * FROM screens WHERE slug = ?').get(slug);
@@ -385,14 +393,14 @@ function categoryFilter(slug) {
 
 export function screenConfig(slug) {
   const s = screenRow(slug);
-  return { slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id) };
+  return { slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id), ...screenMode(s) };
 }
 
 export function listScreens() {
   return db
     .prepare('SELECT * FROM screens ORDER BY name')
     .all()
-    .map((s) => ({ id: s.id, slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id) }));
+    .map((s) => ({ id: s.id, slug: s.slug, name: s.name, idleMinutes: s.idle_minutes, categoryIds: screenCategoryIds(s.id), ...screenMode(s), resumeSecondsRaw: s.resume_seconds }));
 }
 
 export function saveScreen(id, b) {
@@ -401,15 +409,17 @@ export function saveScreen(id, b) {
   if (!/^[a-z0-9-]{1,40}$/.test(slug)) throw new HttpError(400, 'Slug hanya boleh huruf kecil, angka, dan tanda hubung (maks 40)');
   if (!name) throw new HttpError(400, 'Nama layar wajib diisi');
   const idle = b.idleMinutes === '' || b.idleMinutes == null ? null : Math.max(1, Math.min(120, parseInt(b.idleMinutes, 10) || 3));
+  const showQueue = b.showQueue === false || b.showQueue === 0 || b.showQueue === '0' ? 0 : 1;
+  const resume = b.resumeSeconds === '' || b.resumeSeconds == null ? null : Math.max(5, Math.min(600, parseInt(b.resumeSeconds, 10) || DEFAULT_RESUME_SECONDS));
   const catIds = [...new Set((Array.isArray(b.categoryIds) ? b.categoryIds : []).map(Number).filter(Number.isInteger))];
   try {
     tx(() => {
       let sid = id;
       if (id) {
-        const r = db.prepare('UPDATE screens SET slug = ?, name = ?, idle_minutes = ? WHERE id = ?').run(slug, name, idle, id);
+        const r = db.prepare('UPDATE screens SET slug = ?, name = ?, idle_minutes = ?, show_queue = ?, resume_seconds = ? WHERE id = ?').run(slug, name, idle, showQueue, resume, id);
         if (!r.changes) throw new HttpError(404, 'Layar tidak ditemukan');
       } else {
-        sid = Number(db.prepare('INSERT INTO screens (slug, name, idle_minutes) VALUES (?, ?, ?)').run(slug, name, idle).lastInsertRowid);
+        sid = Number(db.prepare('INSERT INTO screens (slug, name, idle_minutes, show_queue, resume_seconds) VALUES (?, ?, ?, ?, ?)').run(slug, name, idle, showQueue, resume).lastInsertRowid);
       }
       db.prepare('DELETE FROM screen_categories WHERE screen_id = ?').run(sid);
       const ins = db.prepare('INSERT OR IGNORE INTO screen_categories (screen_id, category_id) VALUES (?, ?)');
@@ -478,19 +488,49 @@ export function snapshot(slug = null) {
 
 // ---------- Konten ----------
 
-const CONTENT_TYPES = ['text', 'image', 'video', 'pdf'];
+const CONTENT_TYPES = ['text', 'image', 'video', 'pdf', 'youtube'];
+export const MAX_BODY = 20000; // markdown pengumuman
 const CONTENT_EXT = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
   video: ['mp4', 'webm'],
   pdf: ['pdf'],
 };
 
+// ID video YouTube dari tautan watch, youtu.be, shorts, embed, atau live. Selain itu null.
+export function parseYoutubeId(input) {
+  let u;
+  try {
+    u = new URL(String(input || '').trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+  let id = null;
+  if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (u.pathname === '/watch') id = u.searchParams.get('v');
+    else {
+      const m = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?#]+)/);
+      if (m) id = m[1];
+    }
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+}
+
 function normalizeContent(b) {
   const type = CONTENT_TYPES.includes(b.type) ? b.type : null;
   if (!type) throw new HttpError(400, 'Jenis konten tidak valid');
   const duration = Math.max(0, Math.min(3600, parseInt(b.duration ?? 15, 10) || 0));
-  if (type !== 'text' && !b.file) throw new HttpError(400, 'File wajib diunggah untuk jenis ini');
-  if (type !== 'text') {
+  let link = '';
+  if (type === 'youtube') {
+    if (String(process.env.YOUTUBE || 'on').toLowerCase() === 'off') throw new HttpError(400, 'Konten YouTube dimatikan oleh administrator server (YOUTUBE=off)');
+    const id = parseYoutubeId(b.url);
+    if (!id) throw new HttpError(400, 'Tautan YouTube tidak valid. Gunakan tautan video (youtube.com/watch?v=…, youtu.be/…, shorts, atau embed).');
+    if (b.screensaver) throw new HttpError(400, 'Video YouTube tidak bisa dijadikan screensaver');
+    link = 'https://www.youtube.com/watch?v=' + id;
+  } else if (type !== 'text' && !b.file) throw new HttpError(400, 'File wajib diunggah untuk jenis ini');
+  if (type !== 'text' && type !== 'youtube') {
     // Nama berkas hanya boleh hasil unggahan (nama acak) dengan ekstensi yang cocok dengan jenis konten.
     const m = /^[a-f0-9]{20}\.([a-z0-9]{2,4})$/.exec(String(b.file));
     const allowed = CONTENT_EXT[type];
@@ -499,10 +539,11 @@ function normalizeContent(b) {
   return {
     type,
     title: String(b.title || '').slice(0, 200),
-    body: type === 'text' ? String(b.body || '').slice(0, 5000) : '',
-    file: type === 'text' ? '' : String(b.file),
-    duration: type === 'video' && duration === 0 ? 0 : Math.max(duration, type === 'text' ? 5 : 3),
-    sort: parseInt(b.sort ?? 0, 10) || 0,
+    body: type === 'text' ? String(b.body || '').slice(0, MAX_BODY) : '',
+    file: type === 'text' || type === 'youtube' ? '' : String(b.file),
+    url: link,
+    // 0 = sampai video selesai (video unggahan dan YouTube); selain itu batas minimum 3 detik (teks 5 detik).
+    duration: (type === 'video' || type === 'youtube') && duration === 0 ? 0 : Math.max(duration, type === 'text' ? 5 : 3),
     active: b.active === false || b.active === 0 ? 0 : 1,
     screensaver: b.screensaver ? 1 : 0,
   };
@@ -528,8 +569,9 @@ export function createContent(b) {
   const id = tx(() => {
     const info = db
       .prepare(
-        `INSERT INTO contents (type, title, body, file, duration, sort, active, screensaver)
-         VALUES (@type, @title, @body, @file, @duration, @sort, @active, @screensaver)`
+        `INSERT INTO contents (type, title, body, file, url, duration, sort, active, screensaver)
+         VALUES (@type, @title, @body, @file, @url, @duration,
+                 (SELECT COALESCE(MAX(sort), 0) + 1 FROM contents), @active, @screensaver)`
       )
       .run(c);
     const newId = Number(info.lastInsertRowid);
@@ -545,8 +587,8 @@ export function updateContent(id, b) {
   tx(() => {
     const r = db
       .prepare(
-        `UPDATE contents SET type=@type, title=@title, body=@body, file=@file, duration=@duration,
-                sort=@sort, active=@active, screensaver=@screensaver WHERE id=@id`
+        `UPDATE contents SET type=@type, title=@title, body=@body, file=@file, url=@url, duration=@duration,
+                active=@active, screensaver=@screensaver WHERE id=@id`
       )
       .run({ ...c, id });
     if (!r.changes) throw new HttpError(404, 'Konten tidak ditemukan');
@@ -573,6 +615,26 @@ export function bulkContent(b) {
   return { ok: true, count: ids.length, files };
 }
 
+// Urutan tayang dari drag-and-drop: daftar ID lengkap menurut urutan baru. Daftar yang tidak cocok dengan isi
+// tabel (mis. admin lain menambah atau menghapus konten) ditolak agar tidak menimpa perubahan orang lain.
+export function reorderContents(idsIn) {
+  const ids = (Array.isArray(idsIn) ? idsIn : []).map(Number);
+  if (!ids.length || ids.some((n) => !Number.isInteger(n)) || new Set(ids).size !== ids.length) {
+    throw new HttpError(400, 'Daftar urutan tidak valid');
+  }
+  const existing = db.prepare('SELECT id FROM contents').all().map((r) => r.id).sort((a, b) => a - b);
+  const given = [...ids].sort((a, b) => a - b);
+  if (existing.length !== given.length || existing.some((n, i) => n !== given[i])) {
+    throw new HttpError(409, 'Daftar konten berubah. Muat ulang halaman lalu coba lagi.');
+  }
+  tx(() => {
+    const up = db.prepare('UPDATE contents SET sort = ? WHERE id = ?');
+    ids.forEach((id, i) => up.run(i + 1, id));
+  });
+  bus.emit('content');
+  return { ok: true };
+}
+
 export function deleteContent(id) {
   db.prepare('DELETE FROM contents WHERE id = ?').run(id);
   bus.emit('content');
@@ -584,7 +646,7 @@ export function playlist(slug = null) {
   const screenId = slug ? screenRow(slug).id : null;
   const rows = db
     .prepare(
-      `SELECT c.id, c.type, c.title, c.body, c.file, c.duration, c.screensaver
+      `SELECT c.id, c.type, c.title, c.body, c.file, c.url AS link, c.duration, c.screensaver
          FROM contents c
         WHERE c.active = 1
           AND (NOT EXISTS (SELECT 1 FROM content_screens cs WHERE cs.content_id = c.id)
@@ -592,10 +654,10 @@ export function playlist(slug = null) {
         ORDER BY c.sort, c.id`
     )
     .all(screenId)
-    .map((r) => ({ ...r, url: r.file ? `/uploads/${r.file}` : '' }));
+    .map(({ link, ...r }) => ({ ...r, url: r.file ? `/uploads/${r.file}` : '', ...(r.type === 'youtube' ? { videoId: parseYoutubeId(link) } : {}) }));
   return {
     main: rows.filter((r) => !r.screensaver),
-    screensaver: rows.filter((r) => r.screensaver && r.type !== 'text'),
+    screensaver: rows.filter((r) => r.screensaver && r.type !== 'text' && r.type !== 'youtube'),
   };
 }
 

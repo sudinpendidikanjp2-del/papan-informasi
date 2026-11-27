@@ -11,7 +11,10 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
   await api.post('/api/auth/login', { data: { username: 'admin', password: 'rahasia123' } });
   const up = await api.post('/api/admin/upload', { data: fs.readFileSync(FX + '/tiga-halaman.pdf'), headers: { 'x-filename': 'tiga-halaman.pdf' } });
   const file = (await up.json()).file;
-  await api.post('/api/admin/content', { data: { type: 'pdf', title: 'Info Layanan', file, duration: 4, sort: -5 } });
+  const made = await (await api.post('/api/admin/content', { data: { type: 'pdf', title: 'Info Layanan', file, duration: 4 } })).json();
+  // Urutan ditentukan lewat reorder (kolom sort tidak lagi diterima dari klien): PDF dipasang paling depan.
+  const all = (await (await api.get('/api/admin/content')).json()).map((c) => c.id);
+  await api.post('/api/admin/content/reorder', { data: { ids: [made.id, ...all.filter((i) => i !== made.id)] } });
 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
@@ -31,7 +34,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
 
   // pdf.js gagal dimuat -> cadangan iframe
   const ctx2 = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
-  await ctx2.route('**/vendor/pdfjs/**', (r) => r.abort());
+  await ctx2.route('**/assets/pdf.min-*', (r) => r.abort());
   const q = await ctx2.newPage();
   await q.goto(B + '/', { waitUntil: 'load' });
   await q.click('#unlockBtn');

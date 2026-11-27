@@ -1,3 +1,6 @@
+import './icons.js';
+import './common.js';
+
 (function () {
   const P = window.Papan;
   const $ = (id) => document.getElementById(id);

@@ -38,9 +38,11 @@ sudo useradd --system --home /opt/papan-informasi --shell /usr/sbin/nologin papa
 sudo git clone https://github.com/sudinpendidikanjp2-del/papan-informasi /opt/papan-informasi
 sudo chown -R papan:papan /opt/papan-informasi
 
-# 2. Pasang dependensi (juga menyalin pdf.js ke public/vendor lewat skrip postinstall)
+# 2. Pasang dependensi dan bangun antarmuka (Vite, hasilnya di dist/). Alat build hanya dibutuhkan di langkah ini.
 cd /opt/papan-informasi
-sudo -u papan npm ci --omit=dev
+sudo -u papan npm ci
+sudo -u papan npm run build
+sudo -u papan npm prune --omit=dev
 
 # 3. Konfigurasi. Edit berkasnya: ganti ADMIN_PASSWORD dengan password kuat.
 sudo install -m 0640 -o root -g papan deploy/papan-informasi.env.example /etc/papan-informasi.env
@@ -87,7 +89,8 @@ Atau pakai image siap pakai dari GHCR (lihat bagian Rilis di README): `export PA
 docker compose ps                 # kolom STATUS harus "healthy" setelah sekitar 15 detik
 ```
 
-- Data ada di volume Docker `papan-data` (`/data` di dalam container). `HOST` dan `DATA_DIR` di `.env` diabaikan karena compose menimpanya.
+- Data ada di volume Docker `papan-data` (`/data` di dalam container).
+- **Izin direktori data.** Image dimulai sebagai root hanya untuk entrypoint: bila `/data` (bind mount seperti `./data:/data`, atau volume buatan platform deploy) tidak dimiliki pengguna `node` (uid 1000), pemiliknya diperbaiki otomatis, lalu server berjalan sebagai uid 1000 (bukan root). Bila Anda memaksa `user: "1000:1000"` / `--user`, entrypoint tidak bisa memperbaiki apa pun: beri pemilik folder itu uid tersebut (`sudo chown -R 1000:1000 <folder>`). Galat `unable to open database file` atau pesan "Tidak dapat memakai direktori data" berarti direktori itu tidak dapat ditulis. `HOST` dan `DATA_DIR` di `.env` diabaikan karena compose menimpanya.
 - Port dipublikasikan hanya ke `127.0.0.1:3000`. Pasang reverse proxy (bagian 4) di mesin yang sama, atau ubah `ports` menjadi `"3000:3000"` untuk membukanya ke jaringan (tanpa HTTPS).
 - Backup di Docker: `docker compose exec papan node scripts/backup.js --out /data/backups` (arsip ikut berada di volume; salin keluar secara berkala), atau jalankan skrip backup dari host terhadap folder volume.
 - Restore menolak berjalan bila server hidup, tetapi tidak bisa melihat proses di dalam container. Hentikan dulu (`docker compose stop papan`) lalu jalankan restore dengan `--force`.
@@ -104,6 +107,8 @@ Notifikasi push dan layanan pantau yang aman membutuhkan HTTPS. Pilih salah satu
 
 Setelah HTTPS aktif, isi **Alamat dasar untuk kode QR** di Pengaturan dengan alamat yang dipakai pengunjung (mis. `https://antrian.instansi.go.id`), supaya QR di kiosk mengarah ke alamat yang benar.
 
+> **Konten YouTube dan CSP.** Jenis konten YouTube butuh internet di perangkat papan dan membuat CSP mengizinkan skrip dari `www.youtube.com`, iframe dari `youtube-nocookie.com`/`youtube.com`, dan gambar dari `i.ytimg.com`. Jika tidak memakainya, set `YOUTUBE=off` di berkas lingkungan: CSP kembali ke `'self'` saja dan server menolak konten YouTube. Pemutaran YouTube sungguhan belum diuji di lingkungan pengembangan (hanya dengan IFrame API tiruan); coba di perangkat Anda.
+
 ## 5. Memasang layar kiosk
 
 Satu perangkat per layar. Langkah untuk Raspberry Pi OS atau Ubuntu desktop:
@@ -112,7 +117,7 @@ Satu perangkat per layar. Langkah untuk Raspberry Pi OS atau Ubuntu desktop:
 2. Salin repo atau cukup skrip `deploy/kiosk-display.sh` ke perangkat, lalu `chmod +x`.
 3. Daftarkan layar di halaman **Layar** admin (mis. slug `lobi`), lalu uji manual:
    ```bash
-   deploy/kiosk-display.sh "https://antrian.instansi.go.id/?screen=lobi&sound=on"
+   deploy/kiosk-display.sh "https://antrian.instansi.go.id/layar/lobi?sound=on"
    ```
 4. Mulai otomatis: aktifkan login otomatis desktop (Raspberry Pi: `sudo raspi-config` > System Options > Auto Login), lalu
    ```bash
@@ -124,7 +129,9 @@ Skrip membuka kembali browser bila tertutup, menonaktifkan penghemat layar (X11)
 
 **Suara.** Browser menahan audio sampai ada interaksi pengguna. Parameter `sound=on` pada alamat menyembunyikan overlay "Aktifkan" dan skrip kiosk menjalankan Chromium dengan `--autoplay-policy=no-user-gesture-required` agar bel dan suara panggilan langsung berbunyi. **Bagian ini belum teruji di perangkat nyata** (peramban headless di lingkungan pengembangan tidak menegakkan kebijakan autoplay). Bila bel atau suara tidak keluar, hapus `&sound=on` dari alamat, mulai ulang, dan ketuk tombol **Aktifkan** sekali. Suara pembacaan nomor (TTS) juga bergantung pada adanya suara bahasa Indonesia di perangkat; bunyi bel tidak.
 
-Layar sentuh kiosk pengambilan nomor memakai alamat `https://.../kiosk.html` dengan cara yang sama (tanpa `sound=on`).
+Layar sentuh kiosk pengambilan nomor memakai alamat `https://.../kiosk` dengan cara yang sama (tanpa `sound=on`).
+
+**Layar papan informasi saja (sentuh/kursor).** Matikan sakelar *Tampilkan antrian di layar ini* pada layar itu di halaman **Layar**. Alamatnya sama (`/layar/<slug>`), tetapi tanpa antrian dan tanpa suara (jadi `sound=on` tidak diperlukan). Cocok untuk layar sentuh atau perangkat dengan mouse: gerakan kursor/sentuhan memunculkan daftar informasi di kiri dan menjeda tayangan; setelah diam selama waktu *lanjut otomatis* tayangan berlanjut. Screensaver hilang begitu ada gerakan.
 
 ## 6. Backup dan pemulihan
 
@@ -159,12 +166,12 @@ Data lama tidak dihapus: dipindahkan ke `/var/lib/papan-informasi/.bak-<waktu>`;
 sudo systemctl start papan-backup.service         # 1. backup dulu
 cd /opt/papan-informasi
 sudo -u papan git pull                            # 2. ambil versi baru
-sudo -u papan npm ci --omit=dev                   # 3. dependensi (dan pdf.js)
+sudo -u papan npm ci && sudo -u papan npm run build && sudo -u papan npm prune --omit=dev   # 3. dependensi dan build antarmuka
 sudo systemctl restart papan-informasi            # 4. mulai ulang
 curl -s http://127.0.0.1:3000/healthz             # 5. periksa
 ```
 
-Migrasi database berjalan otomatis saat start dan hanya **menambah** tabel dan kolom. Karena itu kode lama biasanya masih bisa membuka database yang sudah dimigrasi, tetapi fitur yang butuh kolom baru tidak akan jalan. Untuk kembali ke versi sebelumnya dengan bersih: `git checkout <commit lama>`, `npm ci --omit=dev`, pulihkan backup yang diambil sebelum pembaruan, lalu mulai ulang.
+Migrasi database berjalan otomatis saat start dan hanya **menambah** tabel dan kolom. Karena itu kode lama biasanya masih bisa membuka database yang sudah dimigrasi, tetapi fitur yang butuh kolom baru tidak akan jalan. Untuk kembali ke versi sebelumnya dengan bersih: `git checkout <commit lama>`, `npm ci && npm run build`, pulihkan backup yang diambil sebelum pembaruan, lalu mulai ulang.
 
 ## 8. Pemantauan
 

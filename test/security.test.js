@@ -30,7 +30,8 @@ describe('header keamanan', () => {
     const headers = await h('/');
     const csp = headers.get('content-security-policy');
     assert.match(csp, /default-src 'self'/);
-    assert.match(csp, /script-src 'self';/);
+    assert.match(csp, /script-src 'self' https:\/\/www\.youtube\.com;/); // IFrame API YouTube: satu-satunya host luar yang diizinkan
+    assert.match(csp, /frame-src 'self' https:\/\/www\.youtube-nocookie\.com https:\/\/www\.youtube\.com;/);
     assert.doesNotMatch(csp.split(';').find((d) => d.trim().startsWith('script-src')), /unsafe/);
     assert.match(csp, /object-src 'none'/);
     assert.match(csp, /frame-ancestors 'self'/);
@@ -38,6 +39,22 @@ describe('header keamanan', () => {
     assert.equal(headers.get('x-frame-options'), 'SAMEORIGIN');
     assert.equal(headers.get('referrer-policy'), 'no-referrer');
     assert.ok(headers.get('permissions-policy'));
+  });
+  it('YOUTUBE=off mengembalikan CSP ke \'self\' saja dan menolak konten YouTube', async () => {
+    const s2 = await startServer({ YOUTUBE: 'off' });
+    try {
+      const csp = (await fetch(s2.base + '/')).headers.get('content-security-policy');
+      assert.match(csp, /script-src 'self';/);
+      assert.match(csp, /frame-src 'self';/);
+      assert.doesNotMatch(csp, /youtube|ytimg/);
+      const a2 = await adminClient(s2.base);
+      const r = await a2.post('/api/admin/content', { type: 'youtube', url: 'https://youtu.be/dQw4w9WgXcQ' });
+      assert.equal(r.status, 400);
+      assert.equal((await a2.get('/api/admin/summary')).body.youtube, false);
+    } finally {
+      await s2.stop();
+      fs.rmSync(s2.dataDir, { recursive: true, force: true });
+    }
   });
   it('HSTS tidak dikirim lewat HTTP polos', async () => {
     assert.equal((await h('/')).get('strict-transport-security'), null);
@@ -47,10 +64,15 @@ describe('header keamanan', () => {
     assert.equal((await h('/tidak-ada')).get('x-content-type-options'), 'nosniff');
   });
   it('tidak ada skrip inline di halaman HTML (CSP akan memblokirnya)', () => {
-    for (const f of fs.readdirSync(path.join(ROOT, 'public')).filter((x) => x.endsWith('.html'))) {
-      const html = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8');
-      assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/i.test(html), `${f} memuat skrip inline`);
-      assert.ok(!/\son[a-z]+\s*=\s*["']/i.test(html), `${f} memuat atribut penangan peristiwa inline`);
+    // Sumber (web/) dan hasil build (dist/): Vite tidak boleh menyisipkan skrip inline.
+    for (const dir of ['web', 'dist']) {
+      const files = fs.readdirSync(path.join(ROOT, dir)).filter((x) => x.endsWith('.html'));
+      assert.ok(files.length >= 5, `${dir} memuat halaman`);
+      for (const f of files) {
+        const html = fs.readFileSync(path.join(ROOT, dir, f), 'utf8');
+        assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/i.test(html), `${dir}/${f} memuat skrip inline`);
+        assert.ok(!/\son[a-z]+\s*=\s*["']/i.test(html), `${dir}/${f} memuat atribut penangan peristiwa inline`);
+      }
     }
   });
   it('SVG unggahan disajikan dengan CSP sandbox; PDF tanpa CSP (agar penampil PDF jalan)', async () => {

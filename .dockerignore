@@ -1,9 +1,10 @@
 node_modules
 data
 backups
+dist
 .git
 .gitignore
 *.log
-public/vendor
 deploy
 docs
+test
