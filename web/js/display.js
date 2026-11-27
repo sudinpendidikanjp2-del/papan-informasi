@@ -159,15 +159,69 @@ import { loadYouTubeApi } from './youtube.js';
     }
   }
 
-  // Teks panjang diperkecil bertahap sampai muat di panggung (satu kali ukur saat ditampilkan).
-  function fitText(box) {
+  // Teks panjang muat di panggung lewat tiga tahap: (1) diperkecil sampai batas masih terbaca (60%), (2) dibagi dua kolom
+  // (hanya di layar lebar), (3) bila masih terpotong, ukuran tengah dan digulir otomatis pelan dari atas ke bawah selama
+  // durasi tayang. Di layar interaktif pengunjung bisa menggulir manual saat tayangan dijeda.
+  let scrollAnim = null;
+  function stopScroll() {
+    if (scrollAnim) { scrollAnim.cancel(); scrollAnim = null; }
+  }
+
+  function startAutoScroll(box, ms) {
+    stopScroll();
     const stage = box.parentElement;
-    let scale = 1;
-    box.style.setProperty('--fit', '1');
-    // scrollHeight (bukan offsetHeight): kotak dibatasi max-height, jadi tinggi isi sebenarnya yang diukur.
-    for (let i = 0; i < 18 && box.scrollHeight > stage.clientHeight + 1 && scale > 0.3; i += 1) {
-      scale -= 0.05;
-      box.style.setProperty('--fit', scale.toFixed(2));
+    const dist = box.scrollHeight - stage.clientHeight + 16;
+    if (dist <= 0) return;
+    const run = Math.max(6000, ms - 4000);
+    // Jeda 2 detik di awal agar judul terbaca, lalu gulir linear; berhenti di dasar sampai item berganti.
+    scrollAnim = box.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-' + dist + 'px)' }], { duration: run, delay: 2000, easing: 'linear', fill: 'both' });
+  }
+
+  function fitText(box, durMs) {
+    const stage = box.parentElement;
+    const ms = durMs || (cur && cur.item ? cur.item.duration * 1000 : 20000);
+    stopScroll();
+    box.classList.remove('cols2');
+    delete box.dataset.mode;
+    stage.classList.remove('scrollmode', 'manual');
+    stage.scrollTop = 0;
+    box.style.transform = '';
+    const fits = () => box.scrollHeight <= stage.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1;
+    const shrink = (floor) => {
+      let scale = 1;
+      box.style.setProperty('--fit', '1');
+      for (let i = 0; i < 20 && !fits() && scale > floor; i += 1) {
+        scale -= 0.05;
+        box.style.setProperty('--fit', scale.toFixed(2));
+      }
+      return fits();
+    };
+    if (shrink(0.6)) return;
+    if (!narrow.matches) {
+      box.classList.add('cols2');
+      if (shrink(0.5)) return;
+      box.classList.remove('cols2');
+    }
+    box.style.setProperty('--fit', '0.7');
+    box.dataset.mode = 'scroll';
+    stage.classList.add('scrollmode');
+    if (paused && infoOnly) setManualScroll(true);
+    else startAutoScroll(box, ms);
+  }
+
+  // Layar interaktif: saat dijeda, gulir otomatis berhenti dan pengunjung menggulir sendiri (roda mouse atau sentuhan).
+  function setManualScroll(on) {
+    const box = document.querySelector('.slide-text');
+    if (!box || box.dataset.mode !== 'scroll') return;
+    const stage = box.parentElement;
+    if (on) {
+      stopScroll();
+      box.style.transform = '';
+      stage.classList.add('manual');
+    } else {
+      stage.classList.remove('manual');
+      stage.scrollTop = 0;
+      startAutoScroll(box, cur && cur.item ? cur.item.duration * 1000 : 20000);
     }
   }
 
@@ -652,6 +706,17 @@ import { loadYouTubeApi } from './youtube.js';
     const box = document.querySelector('.slide-text');
     if (box) fitText(box);
   });
+  // Lebar panggung berubah saat daftar pilihan membuka/menutup: ukur ulang teks agar tetap muat.
+  let refitQueued = false;
+  new ResizeObserver(() => {
+    if (refitQueued) return;
+    refitQueued = true;
+    requestAnimationFrame(() => {
+      refitQueued = false;
+      const box = document.querySelector('.slide-text');
+      if (box) fitText(box);
+    });
+  }).observe($('slide'));
 
   const TYPE_ICON = { text: 'list', image: 'image', video: 'play', pdf: 'file', youtube: 'youtube' };
   const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'Dokumen PDF', youtube: 'Video YouTube' };
@@ -674,11 +739,13 @@ import { loadYouTubeApi } from './youtube.js';
     if (!paused) {
       paused = true;
       clearTimeout(unitTimer); // matikan durasi penayangan selama pengunjung melihat-lihat
+      setManualScroll(true);
       tickCountdown();
     }
     // Daftar hanya digambar ulang saat dibuka: menggambar ulang tiap gerakan menghapus tombol yang sedang diklik.
     if (!$('browse').classList.contains('open')) renderBrowseList();
     $('browse').classList.add('open');
+    document.querySelector('.stage').classList.add('browsing');
     clearTimeout(resumeTimer);
     resumeTimer = setTimeout(leaveBrowse, resumeMs());
   }
@@ -689,6 +756,8 @@ import { loadYouTubeApi } from './youtube.js';
     clearTimeout(resumeTimer);
     document.body.classList.remove('browsing');
     $('browse').classList.remove('open');
+    document.querySelector('.stage').classList.remove('browsing');
+    setManualScroll(false);
     if (!cur || cur.endedWhilePaused) return showNext();
     cur.startedAt = 0;
     cur.frozenRatio = 0;

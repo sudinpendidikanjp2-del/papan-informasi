@@ -58,6 +58,10 @@ const title = (p) => p.evaluate(() => (document.querySelector('.slide-text h2') 
   await p.mouse.move(500, 400); await p.mouse.move(520, 420);
   await p.waitForSelector('.browse.open');
   ok((await p.locator('#browseList .bi').count()) === 3, 'daftar di sisi kiri memuat semua informasi (3)');
+  await p.waitForTimeout(450); // tunggu kolom daftar selesai melebar
+  const ov = await p.evaluate(() => { const b = document.getElementById('browse').getBoundingClientRect(); const s = document.getElementById('slide').getBoundingClientRect(); const t = document.querySelector('.slide-text').getBoundingClientRect(); return { browseRight: b.right, slideLeft: s.left, textLeft: t.left, textRight: t.right, slideRight: s.right }; });
+  ok(ov.slideLeft >= ov.browseRight - 1, `daftar pilihan tidak menutupi konten (panggung mulai ${Math.round(ov.slideLeft)} >= daftar berakhir ${Math.round(ov.browseRight)})`);
+  ok(ov.textLeft >= ov.slideLeft - 1 && ov.textRight <= ov.slideRight + 1, 'teks tetap berada di dalam panggung yang menyempit');
   ok((await txt(p, '#cdText')) === 'Dijeda', 'penghitung berubah menjadi "Dijeda"');
   ok(await p.locator('#browseList .bi.on .n').textContent() === 'Info Satu', 'item yang tampil ditandai pada daftar');
   await p.waitForTimeout(450); // tunggu panel selesai meluncur
