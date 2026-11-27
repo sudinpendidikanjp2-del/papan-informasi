@@ -2,13 +2,14 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6df0">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <title>Pantau Antrian</title>
   <link rel="stylesheet" href="/css/app.css">
   <style>
-    .wrap { max-width: 480px; margin: 0 auto; padding: 16px 16px 40px; display: grid; gap: 14px; }
+    .wrap { max-width: 480px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: grid; gap: 14px; }
     .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
     .bar .nm { font-weight: 700; line-height: 1.15; }
     .bar .sb { font-size: 13px; color: var(--muted); }
@@ -42,6 +43,8 @@
     .foot { text-align: center; font-size: 12.5px; color: var(--muted); }
     .center { text-align: center; padding: 28px 20px; }
     .center .ic { width: 40px; height: 40px; color: var(--muted); }
+
+    @media (max-height: 480px) and (orientation: landscape) { .wrap { max-width: 640px; } .hero .big { font-size: 3.4rem; } }
   </style>
 </head>
 <body>

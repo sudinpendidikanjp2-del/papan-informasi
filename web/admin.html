@@ -2,7 +2,8 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6df0">
   <title>Admin Papan Informasi</title>
   <link rel="stylesheet" href="/css/app.css">
   <style>
@@ -29,6 +30,14 @@
     .drawer > header h2 { font-size: 18px; }
     .drawer .dbody { padding: 20px; overflow-y: auto; flex: 1; }
     .drawer .dfoot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 6px; }
+    @media (max-width: 600px) {
+      .drawer { width: 100%; }
+      .drawer > header { padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); }
+      .drawer .dbody { padding: 16px; padding-bottom: 0; }
+      .drawer .dfoot { position: sticky; bottom: 0; margin: 12px -16px 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); }
+      .drawer .dfoot .btn { flex: 1; justify-content: center; }
+      .settings-grid { grid-template-columns: minmax(0, 1fr); }
+    }
     .status-line { font-size: 13px; display: flex; align-items: center; gap: 8px; }
     .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--blue-100); border-top-color: var(--blue); animation: sp .8s linear infinite; }
     @keyframes sp { to { transform: rotate(360deg); } }

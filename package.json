@@ -1,6 +1,6 @@
 {
   "name": "papan-informasi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Papan informasi digital dan sistem nomor antrian",
   "type": "module",

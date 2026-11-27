@@ -2,11 +2,12 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6df0">
   <title>Panel Meja Layanan</title>
   <link rel="stylesheet" href="/css/app.css">
   <style>
-    .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px 104px; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) calc(104px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
     .top { position: sticky; top: 0; z-index: 20; background: rgba(244,247,252,.92); backdrop-filter: blur(8px); padding: 14px 0 12px; }
     .top .row { justify-content: space-between; flex-wrap: nowrap; }
     .me { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -38,11 +39,20 @@
 
     .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
     .nav .in { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-    .nav button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; justify-items: center; gap: 3px; padding: 8px 4px; border-radius: 12px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+    .nav button { all: unset; box-sizing: border-box; min-height: 44px; cursor: pointer; display: grid; justify-items: center; gap: 3px; padding: 8px 4px; border-radius: 12px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
     .nav button .ic { width: 22px; height: 22px; }
     .nav button.on { color: var(--blue-600); background: var(--blue-50); }
     .nav button:focus-visible { outline: 2px solid var(--blue); }
     .tabpane.hidden { display: none; }
+
+    /* Layar sempit dan ponsel landscape */
+    @media (max-width: 359px) { .actions { grid-template-columns: 1fr; } .xfer { grid-template-columns: 1fr; } }
+    @media (max-height: 480px) and (orientation: landscape) {
+      .wrap { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+      .nav { padding-top: 3px; padding-bottom: calc(3px + env(safe-area-inset-bottom)); }
+      .nav button { padding: 4px; grid-auto-flow: column; justify-content: center; align-content: center; gap: 8px; }
+      .hero .big { font-size: 3.2rem; }
+    }
   </style>
 </head>
 <body>

@@ -201,7 +201,7 @@ td.chk input, th.chk input { width: 18px; height: 18px; accent-color: var(--blue
 .banner.info { background: var(--blue-50); color: var(--blue-700); border-color: var(--blue-100); }
 
 /* ----- Login ----- */
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background:
+.login-wrap { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 16px; background:
   radial-gradient(80% 60% at 50% 0%, var(--blue-100), transparent 70%), var(--bg); }
 .login-box { width: min(420px, 100%); padding: 28px; box-shadow: var(--shadow); }
 .login-box .logo { width: 44px; height: 44px; border-radius: 12px; background: var(--blue); color: #fff; display: grid; place-items: center; margin-bottom: 16px; }
@@ -211,7 +211,7 @@ td.chk input, th.chk input { width: 18px; height: 18px; accent-color: var(--blue
 /* ==========================================================================
    Dasbor admin
    ========================================================================== */
-.shell { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
 .sidebar { background: var(--soft); border-right: 1px solid var(--line); padding: 16px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
 .brandbox { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; min-width: 0; }
 .brandbox .nm { font-weight: 700; font-size: 15px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -324,3 +324,70 @@ tr.drag-chosen { box-shadow: var(--shadow); background: var(--surface); }
 
 .yt-prev { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 13.5px; }
 .yt-prev img { width: 128px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--blue-50); }
+
+/* ==========================================================================
+   Mobile dan tablet
+   ========================================================================== */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, .btn, a, select, label.switch, .tabs-u button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.dz-touch { display: none; }
+
+/* Perangkat sentuh: target minimal 44 px dan teks dropzone yang sesuai. */
+@media (pointer: coarse) {
+  .btn, .btn-sm, .pager button, .mdb, .tabs-u button, .nav-item { min-height: 44px; }
+  .btn-icon, .btn-sm.btn-icon { min-width: 44px; }
+  .switch { min-height: 48px; }
+  td.chk input, th.chk input, .check input { width: 22px; height: 22px; }
+  .dz-desk { display: none; }
+  .dz-touch { display: inline; }
+  .grip { width: 40px; height: 40px; }
+}
+
+@media (max-width: 720px) {
+  /* 16 px mencegah iOS memperbesar halaman saat kolom diisi. */
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea, .md-area .ProseMirror { font-size: 16px; }
+  .login-box { padding: 22px 18px; }
+  .page-head { gap: 12px; }
+  .page-head .btn { width: 100%; justify-content: center; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .toolbar { gap: 8px; }
+  .toolbar .search { flex: 1 1 100%; max-width: none; }
+  .toolbar select { flex: 1 1 100%; width: 100%; }
+  .checks { grid-template-columns: 1fr; }
+  .tabs-u { gap: 18px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .tabs-u::-webkit-scrollbar { display: none; }
+  .tabs-u button { scroll-snap-align: start; }
+  .bulkbar { left: 12px; right: 12px; transform: none; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: none; justify-content: space-between; }
+  .md-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .md-bar::-webkit-scrollbar { display: none; }
+  .mdb { flex: none; }
+  .md-area, .md-area .ProseMirror { min-height: 150px; }
+  .yt-prev { flex-direction: column; align-items: flex-start; }
+  .yt-prev img { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+
+  /* Tabel menjadi kartu bertumpuk. Label kolom diisi dari <th> oleh labelTables() di admin.js. */
+  .tbl-wrap { border: 0; background: transparent; overflow: visible; }
+  .tbl-wrap table { min-width: 0 !important; }
+  table, thead, tbody, tr, td { display: block; }
+  thead { display: none; }
+  tbody tr { display: flex; flex-wrap: wrap; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 12px; padding: 6px 4px; box-shadow: var(--shadow-sm); }
+  tbody tr.sel { border-color: var(--blue); background: var(--blue-50); }
+  td { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 0; text-align: right; min-width: 0; }
+  td::before { content: attr(data-label); flex: none; max-width: 42%; font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; }
+  td:not([data-label])::before, td[data-label=""]::before { content: none; }
+  td.grip-col, td.chk { flex: 0 0 auto; width: auto; padding-right: 0; }
+  td.grip-col::before, td.chk::before { content: none; }
+  td:has(.who) { flex: 1 1 0; justify-content: flex-start; text-align: left; }
+  td:has(.who)::before { content: none; }
+  td:has(.acts) { justify-content: flex-end; }
+  td:has(.acts)::before { content: none; }
+  td.empty { display: block; text-align: center; flex-basis: 100%; }
+  td .pills { justify-content: flex-end; }
+  td:has(.who) .n { white-space: normal; }
+}
+
+@media (max-width: 480px) {
+  .content { padding-inline: 12px; }
+  .kpi { padding: 12px; }
+  .topbar .right .btn .lbl { display: none; }
+}

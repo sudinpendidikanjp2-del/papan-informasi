@@ -113,6 +113,17 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 - Berkas unggahan yang tidak lagi dipakai dihapus otomatis (saat konten dihapus atau diganti, dan penyapuan tiap jam untuk berkas yatim yang berumur lebih dari satu jam).
 - Admin dapat memilih beberapa konten sekaligus untuk diaktifkan, dinonaktifkan, atau dihapus lewat bar aksi massal.
 
+## Tampilan mobile dan tablet
+
+Semua halaman dapat dipakai di ponsel dan tablet; tampilan TV tidak berubah.
+
+- **Papan** (`/`, `/layar/<slug>`): pada lebar ≤ 820 px (ponsel dan tablet potret) menjadi **satu kolom yang dapat digulir**: kartu *Sedang dipanggil*, lalu konten (teks dikecilkan agar muat), lalu daftar meja dan panggilan terakhir. Layar *hanya informasi*: daftar pilihan menjadi **lembar bawah** yang dibuka dengan mengetuk tombol *Daftar* (atau layar) dan ditutup dengan × atau otomatis setelah diam.
+- **Admin**: sidebar menjadi laci; **tabel menjadi kartu bertumpuk** berlabel di ≤ 720 px; laci formulir penuh layar dengan tombol Simpan menempel di bawah; bar aksi massal, editor markdown (bilah alat dapat digeser), dropzone ("Ketuk untuk memilih berkas"), tab, dan filter menyesuaikan lebar layar. Pada perangkat sentuh semua tombol bertinggi ≥ 44 px dan kolom isian berfont 16 px (iOS tidak memperbesar halaman).
+- **Kiosk, panel meja, halaman pantau**: memakai tinggi `dvh` dan area aman (*notch*), kartu kategori kiosk menyusut hingga 320 px, panel meja satu kolom aksi di layar sangat sempit dan navigasi bawah ringkas di ponsel landscape.
+- **Tablet landscape** memakai tata letak TV dengan teks dasar minimal 14 px.
+
+Diuji otomatis (`test/e2e/mobile.e2e.cjs`) pada profil iPhone 13/SE, Pixel 7, iPad Mini, 320 px, dan ponsel landscape: tanpa gulir horizontal, tanpa elemen melewati tepi layar, target sentuh dan font kolom, urutan tata letak papan, lembar bawah, kartu tabel, dan laci. Perangkat nyata (khususnya Safari iOS) belum diuji.
+
 ## Notifikasi pengunjung
 
 Slip kiosk memuat kode QR ke halaman pantau (`/antrian/<token>`) di ponsel pengunjung. Tidak perlu aplikasi, akun, atau nomor telepon.

@@ -164,7 +164,8 @@ import { loadYouTubeApi } from './youtube.js';
     const stage = box.parentElement;
     let scale = 1;
     box.style.setProperty('--fit', '1');
-    for (let i = 0; i < 16 && box.offsetHeight > stage.clientHeight && scale > 0.3; i += 1) {
+    // scrollHeight (bukan offsetHeight): kotak dibatasi max-height, jadi tinggi isi sebenarnya yang diukur.
+    for (let i = 0; i < 18 && box.scrollHeight > stage.clientHeight + 1 && scale > 0.3; i += 1) {
       scale -= 0.05;
       box.style.setProperty('--fit', scale.toFixed(2));
     }
@@ -503,8 +504,9 @@ import { loadYouTubeApi } from './youtube.js';
     $('statServing').textContent = snap.serving ?? 0;
 
     const box = $('counters');
-    box.classList.toggle('two', snap.counters.length > 4);
-    box.classList.toggle('dense', snap.counters.length > 10);
+    // Ponsel/tablet potret: selalu satu kolom dengan baris penuh (kelas two/dense hanya untuk tata letak TV).
+    box.classList.toggle('two', !narrow.matches && snap.counters.length > 4);
+    box.classList.toggle('dense', !narrow.matches && snap.counters.length > 10);
     box.innerHTML = snap.counters.length
       ? snap.counters.map((c) => {
           const cur = c.current;
@@ -565,6 +567,7 @@ import { loadYouTubeApi } from './youtube.js';
       modeKnown = true;
       infoOnly = want;
       document.getElementById('board').classList.toggle('info-only', want);
+      document.body.classList.toggle('info-only', want); // tombol "Daftar" mengambang berada di luar #board
       if (want) {
         unlocked = true; // tanpa suara antrian, tidak perlu menunggu ketukan "Aktifkan"
         $('unlock').classList.add('hidden');
@@ -638,6 +641,18 @@ import { loadYouTubeApi } from './youtube.js';
   for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(t, (e) => onUserActivity(t, e), { passive: true });
   showCursor();
 
+  // Tata letak ponsel (<= 820 px): kolom meja dan teks panjang dihitung ulang saat ukuran layar berubah.
+  const narrow = window.matchMedia('(max-width: 820px)');
+  narrow.addEventListener('change', () => {
+    renderQueue();
+    const box = document.querySelector('.slide-text');
+    if (box) fitText(box);
+  });
+  window.addEventListener('resize', () => {
+    const box = document.querySelector('.slide-text');
+    if (box) fitText(box);
+  });
+
   const TYPE_ICON = { text: 'list', image: 'image', video: 'play', pdf: 'file', youtube: 'youtube' };
   const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'Dokumen PDF', youtube: 'Video YouTube' };
 
@@ -655,6 +670,7 @@ import { loadYouTubeApi } from './youtube.js';
 
   function enterBrowse() {
     if (!items.length) return;
+    document.body.classList.add('browsing');
     if (!paused) {
       paused = true;
       clearTimeout(unitTimer); // matikan durasi penayangan selama pengunjung melihat-lihat
@@ -671,6 +687,7 @@ import { loadYouTubeApi } from './youtube.js';
   function leaveBrowse() {
     paused = false;
     clearTimeout(resumeTimer);
+    document.body.classList.remove('browsing');
     $('browse').classList.remove('open');
     if (!cur || cur.endedWhilePaused) return showNext();
     cur.startedAt = 0;
@@ -694,6 +711,7 @@ import { loadYouTubeApi } from './youtube.js';
     tickCountdown();
   }
 
+  $('browseClose').addEventListener('click', () => leaveBrowse());
   $('browse').addEventListener('click', (e) => {
     const b = e.target.closest('[data-i]');
     if (b) return jumpTo(Number(b.dataset.i));
