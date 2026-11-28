@@ -175,7 +175,7 @@
     .unlock h2 { font-size: 2.4rem; }
     .unlock p { margin: 0; opacity: .92; font-size: 1.2rem; }
     .unlock .btn { font-size: 1.3rem; padding: 1rem 2.2rem; border-radius: 1rem; }
-    .bclose, .browse-fab { display: none; }
+    .bclose, .infogrid-wrap, .qcard, .qfab, .qsafe { display: none; }
     .offline { position: fixed; top: .8rem; left: 50%; transform: translateX(-50%); z-index: 25; background: var(--red); color: #fff; padding: .45rem 1rem; border-radius: 999px; font-size: .95rem; font-weight: 600; box-shadow: var(--shadow-lg); }
 
     /* ===== Tablet landscape: skala TV terlalu kecil di bawah 1280 px ===== */
@@ -225,18 +225,48 @@
       .recent .items { flex-wrap: wrap; white-space: normal; }
       .unlock h2 { font-size: 1.6rem; }
 
-      /* Layar tanpa antrian: daftar pilihan menjadi lembar bawah yang dibuka dengan ketukan. */
-      .info-only .browse { grid-column: auto; grid-row: auto; }
-      .browse { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 58dvh; border-radius: 1.4rem 1.4rem 0 0; opacity: 1; pointer-events: auto; background: rgba(255,255,255,.97); box-shadow: var(--shadow-lg);
-        padding: .9rem .9rem max(1rem, env(safe-area-inset-bottom)); transform: translateY(105%); z-index: 30; }
-      .browse.open { transform: none; }
-      .browse .bh { display: flex; justify-content: space-between; align-items: center; }
-      .bclose { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border: 0; background: var(--blue-50); border-radius: 50%; font-size: 1.6rem; line-height: 1; color: var(--blue-700); cursor: pointer; }
-      .bi { padding: .75rem .8rem; min-height: 3.2rem; }
-      .bi .n { font-size: 1.05rem; }
-      .info-only .browse-fab { display: flex; position: fixed; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 20;
-        align-items: center; gap: .45rem; padding: .8rem 1.1rem; border: 0; border-radius: 999px; background: var(--blue); color: #fff; font-weight: 700; font-size: 1rem; box-shadow: var(--shadow-lg); cursor: pointer; }
-      .browsing .browse-fab { display: none; }
+      /* Panggung tinggi; antrian pindah ke kartu mengambang, pilihan informasi ke kotak 2 kolom. */
+      .queue, .browse, .info-only .browse { display: none !important; }
+      .slide, .info-only .slide { height: clamp(18rem, 58dvh, 40rem); min-height: 0; }
+      .infogrid-wrap { display: block; order: 3; }
+      .infogrid-wrap:not(.has-grid) { display: none; }
+      .infogrid-h { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; padding: 0 .3rem .5rem; }
+      .infogrid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+      .ig { all: unset; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ic m" "n n"; gap: .35rem .5rem; align-items: center; min-height: 5.2rem; padding: .7rem .8rem; border-radius: 1rem; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-sm); cursor: pointer; min-width: 0; touch-action: manipulation; }
+      .ig .bic { grid-area: ic; width: 2rem; height: 2rem; border-radius: .6rem; display: grid; place-items: center; background: var(--blue-100); color: var(--blue-700); }
+      .ig .ic { width: 1.1rem; height: 1.1rem; }
+      .ig .m { grid-area: m; font-size: .75rem; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ig .n { grid-area: n; font-weight: 700; font-size: .95rem; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .ig.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+      .ig.on .bic { background: rgba(255,255,255,.2); color: #fff; }
+      .ig.on .m { color: rgba(255,255,255,.8); }
+      .ig:focus-visible { outline: 3px solid var(--yellow, #ffc52e); outline-offset: 2px; }
+
+      /* Kartu antrian mengambang dan tombol kecilnya (ditempatkan oleh JS di salah satu dari empat sudut). */
+      .qsafe { display: block; position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+      body.qon:not(.qmin):not(.info-only) .qcard { display: flex; }
+      body.qon.qmin:not(.info-only) .qfab { display: flex; }
+      .qcard { position: fixed; left: 12px; top: 12px; z-index: 15; flex-direction: column; width: min(62vw, 17rem); background: rgba(255,255,255,.96); backdrop-filter: blur(8px);
+        border: 1px solid var(--line-strong); border-radius: 1.2rem; box-shadow: var(--shadow-lg); overflow: hidden; transition: left .22s ease, top .22s ease; }
+      .qcard.flash { animation: pulse 1.2s ease 2; }
+      .qgrip { padding: .6rem .7rem .4rem; background: var(--blue); color: #fff; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+      .qtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+      .qtop .eyebrow { font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; opacity: .9; font-weight: 700; }
+      .qmin { all: unset; box-sizing: border-box; width: 2.8rem; height: 2.8rem; margin: -.5rem -.5rem -.5rem 0; display: grid; place-items: center; font-size: 1.6rem; line-height: 1; border-radius: 50%; cursor: pointer; touch-action: manipulation; }
+      .qmin:active { background: rgba(255,255,255,.2); }
+      .qnow { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; padding-bottom: .2rem; }
+      .qn { font-size: 2.6rem; font-weight: 800; line-height: 1.05; color: var(--yellow, #ffc52e); font-variant-numeric: tabular-nums; }
+      .qn.idle { opacity: .7; }
+      .qw { font-size: .85rem; font-weight: 600; min-width: 0; }
+      .qgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .5rem; max-height: 9.4rem; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+      .qc { display: grid; gap: .1rem; padding: .4rem .5rem; border-radius: .7rem; background: var(--soft); border: 1px solid var(--line); min-width: 0; }
+      .qc b { font-size: 1.05rem; line-height: 1.1; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+      .qc span { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .qc.busy { background: var(--blue-50); border-color: var(--blue); }
+      .qc.busy b { color: var(--blue-700); }
+      .qfab { position: fixed; left: 12px; top: 12px; z-index: 15; align-items: center; justify-content: center; min-width: 3.8rem; height: 3.8rem; padding: 0 .6rem; border: 0; border-radius: 999px; background: var(--blue); color: var(--yellow, #ffc52e);
+        font-weight: 800; font-size: .95rem; box-shadow: var(--shadow-lg); cursor: grab; touch-action: none; transition: left .22s ease, top .22s ease; }
       .nocursor, .nocursor * { cursor: auto !important; }
     }
     @media (max-width: 420px) { .clock .d { display: none; } }
@@ -276,6 +306,10 @@
           <div class="lbl"><span>Tayangan</span><span id="trackerCount"></span></div>
           <div class="segs" id="tracker"></div>
         </div>
+        <div class="infogrid-wrap" aria-label="Daftar informasi">
+          <div class="infogrid-h">Daftar informasi</div>
+          <div class="infogrid" id="infoGrid"></div>
+        </div>
       </section>
 
       <aside class="queue">
@@ -303,7 +337,15 @@
     </main>
   </div>
 
-  <button type="button" class="browse-fab" id="browseBtn" aria-label="Buka daftar informasi">&#9776; Daftar</button>
+  <div class="qsafe" id="qsafe" aria-hidden="true"></div>
+  <div class="qcard" id="qcard" role="status" aria-live="polite" aria-label="Antrian">
+    <div class="qgrip" id="qgrip">
+      <div class="qtop"><span class="eyebrow">Sedang dipanggil</span><button type="button" class="qmin" id="qmin" aria-label="Perkecil kartu antrian">&minus;</button></div>
+      <div class="qnow" id="qnow"></div>
+    </div>
+    <div class="qgrid" id="qgrid"></div>
+  </div>
+  <button type="button" class="qfab" id="qfab" aria-label="Buka kartu antrian"><span class="num" id="qfabNum">&mdash;</span></button>
   <div class="saver hidden" id="saver"></div>
   <div class="offline hidden" id="offline" role="status">Koneksi ke server terputus, mencoba lagi…</div>
 

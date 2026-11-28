@@ -117,12 +117,12 @@ Riwayat dan hitungan pegawai asal tidak memuat tiket yang dipindahkan. Di lapora
 
 Semua halaman dapat dipakai di ponsel dan tablet; tampilan TV tidak berubah.
 
-- **Papan** (`/`, `/layar/<slug>`): pada lebar ≤ 820 px (ponsel dan tablet potret) menjadi **satu kolom yang dapat digulir**: kartu *Sedang dipanggil*, lalu konten (teks dikecilkan agar muat), lalu daftar meja dan panggilan terakhir. Layar *hanya informasi*: daftar pilihan menjadi **lembar bawah** yang dibuka dengan mengetuk tombol *Daftar* (atau layar) dan ditutup dengan × atau otomatis setelah diam.
+- **Papan** (`/`, `/layar/<slug>`): pada lebar ≤ 820 px (ponsel dan tablet potret) memakai tata letak berikut: **konten tinggi** dengan bilah progres, lalu **kotak informasi 2 kolom** (ikon, judul, jenis; mengetuk kartu melompat ke informasi itu dan menjeda, lanjut otomatis setelah *lanjut otomatis* detik). Antrian tampil sebagai **kartu mengambang**: nomor terakhir dipanggil dan kisi meja (2 kolom, menggulir bila banyak meja). Kartu dapat **diseret** (menempel ke sudut terdekat), **diperkecil** menjadi tombol bulat berisi nomor terakhir, dan **terbuka lagi otomatis** saat ada panggilan baru; posisi dan status diingat per layar di perangkat itu. Layar *hanya informasi* tidak memiliki kartu antrian.
 - **Admin**: sidebar menjadi laci; **tabel menjadi kartu bertumpuk** berlabel di ≤ 720 px; laci formulir penuh layar dengan tombol Simpan menempel di bawah; bar aksi massal, editor markdown (bilah alat dapat digeser), dropzone ("Ketuk untuk memilih berkas"), tab, dan filter menyesuaikan lebar layar. Pada perangkat sentuh semua tombol bertinggi ≥ 44 px dan kolom isian berfont 16 px (iOS tidak memperbesar halaman).
 - **Kiosk, panel meja, halaman pantau**: memakai tinggi `dvh` dan area aman (*notch*), kartu kategori kiosk menyusut hingga 320 px, panel meja satu kolom aksi di layar sangat sempit dan navigasi bawah ringkas di ponsel landscape.
 - **Tablet landscape** memakai tata letak TV dengan teks dasar minimal 14 px.
 
-Diuji otomatis (`test/e2e/mobile.e2e.cjs`) pada profil iPhone 13/SE, Pixel 7, iPad Mini, 320 px, dan ponsel landscape: tanpa gulir horizontal, tanpa elemen melewati tepi layar, target sentuh dan font kolom, urutan tata letak papan, lembar bawah, kartu tabel, dan laci. Perangkat nyata (khususnya Safari iOS) belum diuji.
+Diuji otomatis (`test/e2e/mobile.e2e.cjs`) pada profil iPhone 13/SE, Pixel 7, iPad Mini, 320 px, dan ponsel landscape: tanpa gulir horizontal, tanpa elemen melewati tepi layar, target sentuh dan font kolom, tata letak papan, kartu antrian (seret, perkecil, panggilan baru), kotak informasi, kartu tabel, dan laci. Perangkat nyata (khususnya Safari iOS) belum diuji.
 
 ## Notifikasi pengunjung
 

@@ -420,6 +420,7 @@ import { loadYouTubeApi } from './youtube.js';
       }
     }
     $('trackerCount').textContent = items.length ? (idx + 1) + '/' + items.length : '';
+    markGrid();
   }
 
   function applyPlaylist(newPl) {
@@ -427,6 +428,7 @@ import { loadYouTubeApi } from './youtube.js';
     playlist = newPl;
     items = playlist.main;
     prepareSaver();
+    renderInfoGrid();
     if (!items.length) return renderEmpty();
     buildTracker();
     if (infoOnly) renderBrowseList();
@@ -579,7 +581,104 @@ import { loadYouTubeApi } from './youtube.js';
     $('recent').innerHTML = (snap.recent || []).slice(0, 4).map((r) =>
       '<span class="rc"><b>' + P.esc(r.label) + '</b> → ' + P.esc(r.counter || '') +
       (r.priority ? ' ' + P.icon('star') : '') + '</span>').join('');
+    renderQCard();
   }
+
+  // ---------- Kartu antrian mengambang (ponsel/tablet potret) ----------
+  // Nomor terakhir dipanggil + kisi meja; dapat diseret (menempel ke sudut terdekat) atau diperkecil menjadi tombol.
+  // Panggilan baru membuka kembali kartu yang diperkecil. Posisi dan status diingat per layar di perangkat ini.
+  const qKeyName = 'papan.qcard.' + (slug || 'all');
+  const qState = { c: 'tl', m: false };
+  try { Object.assign(qState, JSON.parse(localStorage.getItem(qKeyName) || '{}')); } catch { /* mode privat */ }
+  let qSeen = null;
+  const saveQ = () => { try { localStorage.setItem(qKeyName, JSON.stringify(qState)); } catch { /* mode privat */ } };
+
+  function renderQCard() {
+    if (infoOnly || !snap) return;
+    document.body.classList.add('qon');
+    const latest = snap.recent && snap.recent[0];
+    const label = latest ? latest.label : '—';
+    $('qnow').innerHTML = '<div class="qn num' + (latest ? '' : ' idle') + '">' + P.esc(label) + '</div>' +
+      '<div class="qw">' + (latest ? 'ke ' + P.esc(latest.counter || 'meja layanan') : 'Menunggu panggilan') + '</div>';
+    $('qfabNum').textContent = label;
+    $('qgrid').innerHTML = snap.counters.length
+      ? snap.counters.map((c) =>
+          '<div class="qc' + (c.current ? ' busy' : '') + '"><b class="num">' + (c.current ? P.esc(c.current.label) : 'Kosong') +
+          '</b><span>' + P.esc(c.name) + '</span></div>').join('')
+      : '<div class="muted">Belum ada meja</div>';
+
+    const key = latest ? latest.label + '@' + latest.calledAt : '';
+    // Muat pertama memakai status tersimpan; hanya panggilan yang datang sesudahnya yang membuka kartu lagi.
+    const isNew = key && qSeen !== null && key !== qSeen;
+    qSeen = key;
+    if (isNew) {
+      if (qState.m) { qState.m = false; saveQ(); }
+      const card = $('qcard');
+      card.classList.remove('flash');
+      void card.offsetWidth;
+      card.classList.add('flash');
+    }
+    document.body.classList.toggle('qmin', qState.m);
+    placeQ();
+  }
+
+  // Sudut menempel: margin 12 px + area aman; sudut atas berada di bawah header agar tidak menutup nama instansi.
+  function placeQ(live) {
+    const el = qState.m ? $('qfab') : $('qcard');
+    if (!el || !narrow.matches || infoOnly) return;
+    const probe = $('qsafe');
+    const cs = getComputedStyle(probe);
+    const M = 12;
+    const sl = parseFloat(cs.paddingLeft) || 0, sr = parseFloat(cs.paddingRight) || 0, sb = parseFloat(cs.paddingBottom) || 0, st = parseFloat(cs.paddingTop) || 0;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const headBottom = Math.max(0, document.querySelector('.head').getBoundingClientRect().bottom);
+    const left = M + sl;
+    const right = innerWidth - w - M - sr;
+    const top = Math.max(M + st, headBottom + 8);
+    const bottom = innerHeight - h - M - sb;
+    const c = qState.c;
+    el.style.transition = live ? 'none' : '';
+    el.style.left = Math.max(0, c[1] === 'r' ? right : left) + 'px';
+    el.style.top = Math.max(0, c[0] === 'b' ? bottom : Math.min(top, bottom)) + 'px';
+  }
+
+  function dragQ(el, handle, onTap) {
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, id = null;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button') && e.target.closest('button') !== handle) return;
+      id = e.pointerId;
+      sx = e.clientX; sy = e.clientY;
+      ox = el.offsetLeft; oy = el.offsetTop;
+      moved = false;
+      handle.setPointerCapture(id);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== id) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      el.style.transition = 'none';
+      el.style.left = Math.max(0, Math.min(innerWidth - el.offsetWidth, ox + dx)) + 'px';
+      el.style.top = Math.max(0, Math.min(innerHeight - el.offsetHeight, oy + dy)) + 'px';
+    });
+    const end = (e) => {
+      if (e.pointerId !== id) return;
+      id = null;
+      if (!moved) { if (onTap) onTap(); return; }
+      const cx = el.offsetLeft + el.offsetWidth / 2, cy = el.offsetTop + el.offsetHeight / 2;
+      qState.c = (cy > innerHeight / 2 ? 'b' : 't') + (cx > innerWidth / 2 ? 'r' : 'l');
+      saveQ();
+      placeQ();
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+    // Klik yang menyusul seret tidak boleh memicu aksi tombol di dalamnya.
+    handle.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  }
+  dragQ($('qcard'), $('qgrip'), null);
+  dragQ($('qfab'), $('qfab'), () => { qState.m = false; saveQ(); renderQCard(); });
+  $('qmin').addEventListener('click', () => { qState.m = true; saveQ(); renderQCard(); });
+  window.addEventListener('resize', () => placeQ());
 
   // ---------- Muat data ----------
 
@@ -689,7 +788,8 @@ import { loadYouTubeApi } from './youtube.js';
     lastUserActivity = P.timeSync.now();
     showCursor();
     if (saverOn) stopSaver(); // screensaver hilang begitu kursor bergerak atau layar disentuh
-    if (infoOnly) enterBrowse();
+    // Di ponsel, hanya ketukan pada kartu informasi yang menjeda tayangan (gulir dan sentuhan biasa tidak).
+    if (infoOnly && !narrow.matches) enterBrowse();
   }
   document.addEventListener('pointermove', (e) => onUserActivity('move', e), { passive: true });
   for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(t, (e) => onUserActivity(t, e), { passive: true });
@@ -699,6 +799,7 @@ import { loadYouTubeApi } from './youtube.js';
   const narrow = window.matchMedia('(max-width: 820px)');
   narrow.addEventListener('change', () => {
     renderQueue();
+    placeQ();
     const box = document.querySelector('.slide-text');
     if (box) fitText(box);
   });
@@ -721,7 +822,38 @@ import { loadYouTubeApi } from './youtube.js';
   const TYPE_ICON = { text: 'list', image: 'image', video: 'play', pdf: 'file', youtube: 'youtube' };
   const TYPE_LABEL = { text: 'Teks', image: 'Gambar', video: 'Video', pdf: 'Dokumen PDF', youtube: 'Video YouTube' };
 
+  // Kartu informasi 2 kolom di bawah panggung (hanya tampil di ponsel/tablet potret).
+  let gridIdx = -2;
+  function renderInfoGrid() {
+    const box = $('infoGrid');
+    box.innerHTML = items.map((it, i) =>
+      '<button type="button" class="ig' + (i === idx ? ' on' : '') + '" data-i="' + i + '"' + (i === idx ? ' aria-current="true"' : '') + '>' +
+      '<span class="bic">' + P.icon(TYPE_ICON[it.type] || 'list') + '</span>' +
+      '<span class="n">' + P.esc(it.title || TYPE_LABEL[it.type] || 'Informasi') + '</span>' +
+      '<span class="m">' + (TYPE_LABEL[it.type] || '') + '</span></button>').join('');
+    box.parentElement.classList.toggle('has-grid', items.length > 0);
+    gridIdx = idx;
+  }
+
+  // Menyorot kartu yang sedang tayang tanpa menggambar ulang (agar ketukan yang sedang berlangsung tidak hilang).
+  function markGrid() {
+    if (gridIdx === idx) return;
+    gridIdx = idx;
+    $('infoGrid').querySelectorAll('.ig').forEach((b, i) => {
+      b.classList.toggle('on', i === idx);
+      if (i === idx) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
+  }
+
+  $('infoGrid').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    enterBrowse(); // jeda; lanjut otomatis setelah resumeSeconds tanpa interaksi
+    jumpTo(Number(b.dataset.i));
+  });
+
   function renderBrowseList() {
+    renderInfoGrid();
     const box = $('browseList');
     box.innerHTML = items.map((it, i) =>
       '<button type="button" class="bi' + (i === idx ? ' on' : '') + '" data-i="' + i + '"' + (i === idx ? ' aria-current="true"' : '') + '>' +
